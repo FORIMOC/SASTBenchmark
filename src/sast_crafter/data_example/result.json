@@ -1,0 +1,106 @@
+[
+  {
+    "CVEID": "CVE-2023-50094",
+    "CWEIDs": [
+      "78"
+    ],
+    "Repo": "https://github.com/yogeshojha/rengine",
+    "Language": "Python",
+    "VulnerableCommit": "5e120bd5f9dfbd1da82a193e8c9702e483d38d22",
+    "PatchInfo": {
+      "URL": "https://github.com/yogeshojha/rengine/blob/5e120bd5f9dfbd1da82a193e8c9702e483d38d22/web/api/views.py#L195",
+      "Time": "2023-10-24T05:48:28Z",
+      "Kind": "blob"
+    },
+    "refs": [
+      {
+        "url": "https://github.com/yogeshojha/rengine/blob/53d9f505f04861a5040195ea71f20907ff90577a/web/api/views.py#L268-L275",
+        "source": "cve@mitre.org"
+      },
+      {
+        "url": "https://github.com/yogeshojha/rengine/blob/5e120bd5f9dfbd1da82a193e8c9702e483d38d22/web/api/views.py#L195",
+        "source": "cve@mitre.org",
+        "tags": [
+          "Product"
+        ]
+      },
+      {
+        "url": "https://github.com/yogeshojha/rengine/commit/3d5f1724dd12cf9861443742e7d7c02ff8c75a6f",
+        "source": "cve@mitre.org"
+      },
+      {
+        "url": "https://github.com/yogeshojha/rengine/commit/edd3c85ee16f93804ad38dac5602549d2d30a93e",
+        "source": "cve@mitre.org"
+      },
+      {
+        "url": "https://github.com/yogeshojha/rengine/releases",
+        "source": "cve@mitre.org",
+        "tags": [
+          "Release Notes"
+        ]
+      },
+      {
+        "url": "https://github.com/yogeshojha/rengine/security",
+        "source": "cve@mitre.org",
+        "tags": [
+          "Product"
+        ]
+      },
+      {
+        "url": "https://github.com/yogeshojha/rengine/security/advisories/GHSA-fx7f-f735-vgh4",
+        "source": "cve@mitre.org"
+      },
+      {
+        "url": "https://www.mattz.io/posts/cve-2023-50094/",
+        "source": "cve@mitre.org",
+        "tags": [
+          "Exploit",
+          "Third Party Advisory"
+        ]
+      },
+      {
+        "url": "https://github.com/yogeshojha/rengine/blob/5e120bd5f9dfbd1da82a193e8c9702e483d38d22/web/api/views.py#L195",
+        "source": "af854a3a-2127-422b-91ae-364da2661108",
+        "tags": [
+          "Product"
+        ]
+      },
+      {
+        "url": "https://github.com/yogeshojha/rengine/releases",
+        "source": "af854a3a-2127-422b-91ae-364da2661108",
+        "tags": [
+          "Release Notes"
+        ]
+      },
+      {
+        "url": "https://github.com/yogeshojha/rengine/security",
+        "source": "af854a3a-2127-422b-91ae-364da2661108",
+        "tags": [
+          "Product"
+        ]
+      },
+      {
+        "url": "https://www.mattz.io/posts/cve-2023-50094/",
+        "source": "af854a3a-2127-422b-91ae-364da2661108",
+        "tags": [
+          "Exploit",
+          "Third Party Advisory"
+        ]
+      }
+    ],
+    "CVSS": {
+      "version": "3.1",
+      "vectorString": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+      "baseScore": 8.8,
+      "baseSeverity": "HIGH",
+      "attackVector": "NETWORK",
+      "attackComplexity": "LOW",
+      "privilegesRequired": "LOW",
+      "userInteraction": "NONE",
+      "scope": "UNCHANGED",
+      "confidentialityImpact": "HIGH",
+      "integrityImpact": "HIGH",
+      "availabilityImpact": "HIGH"
+    }
+  }
+]
