@@ -1,27 +1,37 @@
 # SASTBenchmark
 
 1. CCLocator: LLM Based CVE Vul Commit & Code Locator
-2. SAST Crafter: Automatic Run SAST(15)
+
+从 NVD 中获取 CVE 数据，定位对应的带有漏洞的 Commit 和 Code 位置，然后将整理好的CVE以及代码片段整合到Benchmark中
+
+2. SAST Crafter: Automatic Run SAST
+
+自动搭建并运行 SAST，获取相关的 report
+
 3. Report Verifier: LLM Based Report Verification
+
+输入 CVE 和 SAST Report，输出 CVE 是否被 SAST 捕获
 
 ## CVEfix Limitations
 
-CVEfix只搜集了所有commit，并diff分析了行号
+CVEfix只搜集了所有commit，并diff分析了行号，以及以文件和函数粒度记录了每个commit的修改内容
 
-但是，CVEfix没有做指出一个CVE的漏洞代码位置的工作
+但是，CVEfix没有做指出一个CVE的漏洞代码位置的工作，这对于我们的工作没有很大帮助
 
-在CVEfix enhanced中我们要确定一个CVE的带有漏洞的Commit以及其漏洞代码位置
+我们的目的是要准确获取到一个CVE对应的带有漏洞的commit版本以及对应的vul code位置，以此作为判断SAST是否捕获到了这个漏洞，cover了这个CVE
 
 ### 获取CVE对应的漏洞代码位置的难点
+
+一个CVE的patch可能存在下面两种情况
 
 - 多提交修复：一个CVE可能在多个提交之后才完全修复 -> 无法确定哪一个提交修复了核心漏洞代码
 - 无关修改：在一个commit中可能包含多处文件修改，一些是和改CVE的修复相关，其他很大一部分则无关 -> diff之后也无法确定哪一部分是漏洞代码
 
-这两种情况可能组合发生
+这两种情况可能组合发生，我们认为需要加一个大模型验证的环节，如果存在上述情况，则组合人工核验
 
-认为需要加一个大模型验证的环节，如果存在上述情况，则人工核验
+### 当前方法(CCLocator, Commit & Code Locator)
 
-### 当前方法
+在CCLocator中我们要确定一个CVE的带有漏洞的Commit以及其漏洞代码的位置
 
 1. 获取一个cve的所有相关commit（已完成）
 2. 根据时间排序并找到最早的一个commit（已完成）
@@ -31,8 +41,6 @@ CVEfix只搜集了所有commit，并diff分析了行号
 - 2015-2024年NVD数据库
 - 属于OWASP TOP 10 2021包含的CWE
 - 属于Java、Python、Go、JavaScript、PHP五种语言之一
-
-具体逻辑在cve_collect.py中
 
 ## CVEfix DB
 
