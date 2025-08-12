@@ -1,8 +1,12 @@
 # SASTBenchmark
 
-1. CCLocator: LLM Based CVE Vul Commit & Code Locator
+1. BenchGen
 
 从 NVD 中获取 CVE 数据，定位对应的带有漏洞的 Commit 和 Code 位置，然后将整理好的CVE以及代码片段整合到Benchmark中
+
+- CVECollector: 从 NVD 中根据标准筛选 CVE 数据
+- CCLocator(LLM Based CVE Vul Commit & Code Locator): 将筛选出来的 CVE 数据半自动化的每个定位漏洞代码位置
+- BenchGen: CVE 数据和对应的漏洞代码片段整合到 Benchmark 中
 
 2. SAST Crafter: Automatic Run SAST
 

@@ -1,0 +1,784 @@
+[
+  {
+    "CVEID": "CVE-2024-52596",
+    "CWEIDs": [
+      "611"
+    ],
+    "Repo": "https://github.com/simplesamlphp/xml-common",
+    "Language": "PHP",
+    "VulnerableCommit": "344fb19206a07f245525dde78e9ac736b2ec22d2",
+    "PatchInfo": {
+      "URL": "https://github.com/simplesamlphp/xml-common/commit/fa4ade391c3194466acf5fbfd5d2ecdbf5e831f5",
+      "Time": "2024-12-01T22:18:45Z",
+      "Message": "Merge commit from fork\n\nExplicitly disable the loading of external entities",
+      "Diff": [
+        {
+          "filename": "src/DOMDocumentFactory.php",
+          "status": "modified",
+          "additions": 34,
+          "deletions": 16,
+          "changes": 50,
+          "patch": "@@ -5,15 +5,16 @@\n namespace SimpleSAML\\XML;\n \n use DOMDocument;\n-use RuntimeException;\n use SimpleSAML\\Assert\\Assert;\n use SimpleSAML\\XML\\Exception\\IOException;\n+use SimpleSAML\\XML\\Exception\\RuntimeException;\n use SimpleSAML\\XML\\Exception\\UnparseableXMLException;\n \n-use function defined;\n use function file_get_contents;\n+use function func_num_args;\n use function libxml_clear_errors;\n use function libxml_get_last_error;\n+use function libxml_set_external_entity_loader;\n use function libxml_use_internal_errors;\n use function sprintf;\n \n@@ -22,25 +23,41 @@\n  */\n final class DOMDocumentFactory\n {\n+    /**\n+     * @var non-negative-int\n+     * TODO: Add LIBXML_NO_XXE to the defaults when PHP 8.4.0 + libxml 2.13.0 become generally available\n+     */\n+    public const DEFAULT_OPTIONS = LIBXML_COMPACT | LIBXML_NONET | LIBXML_NSCLEAN;\n+\n+\n     /**\n      * @param string $xml\n-     * @param non-empty-string $xml\n+     * @param non-negative-int $options\n      *\n      * @return \\DOMDocument\n      */\n-    public static function fromString(string $xml): DOMDocument\n-    {\n+    public static function fromString(\n+        string $xml,\n+        int $options = self::DEFAULT_OPTIONS,\n+    ): DOMDocument {\n+        libxml_set_external_entity_loader(null);\n         Assert::notWhitespaceOnly($xml);\n+        Assert::notRegex(\n+            $xml,\n+            '/<(\\s*)!(\\s*)DOCTYPE/',\n+            'Dangerous XML detected, DOCTYPE nodes are not allowed in the XML body',\n+            RuntimeException::class,\n+        );\n \n         $internalErrors = libxml_use_internal_errors(true);\n         libxml_clear_errors();\n \n-        $domDocument = self::create();\n-        $options = LIBXML_DTDLOAD | LIBXML_DTDATTR | LIBXML_NONET | LIBXML_PARSEHUGE | LIBXML_NSCLEAN;\n-        if (defined('LIBXML_COMPACT')) {\n-            $options |= LIBXML_COMPACT;\n+        // If LIBXML_NO_XXE is available and option not set\n+        if (func_num_args() === 1 && defined('LIBXML_NO_XXE')) {\n+            $options != LIBXML_NO_XXE;\n         }\n \n+        $domDocument = self::create();\n         $loaded = $domDocument->loadXML($xml, $options);\n \n         libxml_use_internal_errors($internalErrors);\n@@ -55,11 +72,11 @@ public static function fromString(string $xml): DOMDocument\n         libxml_clear_errors();\n \n         foreach ($domDocument->childNodes as $child) {\n-            if ($child->nodeType === XML_DOCUMENT_TYPE_NODE) {\n-                throw new RuntimeException(\n-                    'Dangerous XML detected, DOCTYPE nodes are not allowed in the XML body',\n-                );\n-            }\n+            Assert::false(\n+                $child->nodeType === XML_DOCUMENT_TYPE_NODE,\n+                'Dangerous XML detected, DOCTYPE nodes are not allowed in the XML body',\n+                RuntimeException::class,\n+            );\n         }\n \n         return $domDocument;\n@@ -68,10 +85,11 @@ public static function fromString(string $xml): DOMDocument\n \n     /**\n      * @param string $file\n+     * @param non-negative-int $options\n      *\n      * @return \\DOMDocument\n      */\n-    public static function fromFile(string $file): DOMDocument\n+    public static function fromFile(string $file, int $options = self::DEFAULT_OPTIONS): DOMDocument\n     {\n         error_clear_last();\n         $xml = @file_get_contents($file);\n@@ -83,7 +101,7 @@ public static function fromFile(string $file): DOMDocument\n         }\n \n         Assert::notWhitespaceOnly($xml, sprintf('File \"%s\" does not have content', $file), RuntimeException::class);\n-        return static::fromString($xml);\n+        return (func_num_args() === 1) ? static::fromString($xml) : static::fromString($xml, $options);\n     }\n \n "
+        },
+        {
+          "filename": "tests/XML/DOMDocumentFactoryTest.php",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 0,
+          "changes": 13,
+          "patch": "@@ -84,6 +84,19 @@ public function testStringThatContainsDocTypeIsNotAccepted(): void\n     }\n \n \n+    public function testStringThatContainsDocTypeIsNotAccepted2(): void\n+    {\n+        $xml = '<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n+               <!DOCTYPE foo [<!ENTITY % exfiltrate SYSTEM \"file://dev/random\">%exfiltrate;]>\n+               <foo>y</foo>';\n+        $this->expectException(RuntimeException::class);\n+        $this->expectExceptionMessage(\n+            'Dangerous XML detected, DOCTYPE nodes are not allowed in the XML body',\n+        );\n+        DOMDocumentFactory::fromString($xml);\n+    }\n+\n+\n     public function testEmptyFileIsNotValid(): void\n     {\n         $file = 'resources/xml/domdocument_empty.xml';"
+        }
+      ]
+    },
+    "refs": [
+      {
+        "url": "https://github.com/simplesamlphp/xml-common/commit/fa4ade391c3194466acf5fbfd5d2ecdbf5e831f5",
+        "source": "security-advisories@github.com"
+      },
+      {
+        "url": "https://github.com/simplesamlphp/xml-common/security/advisories/GHSA-2x65-fpch-2fcm",
+        "source": "security-advisories@github.com"
+      },
+      {
+        "url": "https://lists.debian.org/debian-lts-announce/2024/12/msg00001.html",
+        "source": "af854a3a-2127-422b-91ae-364da2661108"
+      }
+    ],
+    "CVSS": {}
+  },
+  {
+    "CVEID": "CVE-2024-52806",
+    "CWEIDs": [
+      "611"
+    ],
+    "Repo": "https://github.com/simplesamlphp/saml2",
+    "Language": "PHP",
+    "VulnerableCommit": "f32fdf3b86b156adfb982a09c902790dc6562b34",
+    "PatchInfo": {
+      "URL": "https://github.com/simplesamlphp/saml2/commit/5fd4ce4596656fb0c1278f15b8305825412e89f7",
+      "Time": "2024-12-01T22:12:22Z",
+      "Message": "Merge commit from fork\n\n* Explicitly disable loading of external entities\n\n* Remove problematic options\n\n* Move test for dangerous XML before where the document is loaded\n\n* Defense in depth: test for DOCTYPE in two different ways\n\n* Add unit test\n\n* Use defined() for LIB_NO_XXE",
+      "Diff": [
+        {
+          "filename": "src/SAML2/DOMDocumentFactory.php",
+          "status": "modified",
+          "additions": 13,
+          "deletions": 1,
+          "changes": 14,
+          "patch": "@@ -30,15 +30,27 @@ public static function fromString(string $xml) : DOMDocument\n     {\n         if (trim($xml) === '') {\n             throw InvalidArgumentException::invalidType('non-empty string', $xml);\n+        } elseif (preg_match('/<(\\s*)!(\\s*)DOCTYPE/', $xml)) {\n+            throw new RuntimeException(\n+                'Dangerous XML detected, DOCTYPE nodes are not allowed in the XML body'\n+            );\n         } elseif (PHP_VERSION_ID < 80000) {\n             $entityLoader = libxml_disable_entity_loader(true);\n+        } else {\n+            libxml_set_external_entity_loader(null);\n         }\n \n         $internalErrors = libxml_use_internal_errors(true);\n         libxml_clear_errors();\n \n         $domDocument = self::create();\n-        $options = LIBXML_DTDLOAD | LIBXML_DTDATTR | LIBXML_NONET | LIBXML_PARSEHUGE;\n+        $options = LIBXML_NONET | LIBXML_PARSEHUGE;\n+\n+        /* LIBXML_NO_XXE available from PHP 8.4 */\n+        if (defined('LIBXML_NO_XXE')) {\n+            $options |= LIBXML_NO_XXE;\n+        }\n+\n         if (defined('LIBXML_COMPACT')) {\n             $options |= LIBXML_COMPACT;\n         }"
+        },
+        {
+          "filename": "tests/SAML2/DOMDocumentFactoryTest.php",
+          "status": "modified",
+          "additions": 16,
+          "deletions": 0,
+          "changes": 16,
+          "patch": "@@ -99,6 +99,22 @@ public function testStringThatContainsDocTypeIsNotAccepted() : void\n     }\n \n \n+    /**\n+     * @group                    domdocument\n+     * @return void\n+     */\n+    public function testStringThatContainsDocTypeIsNotAccepted2(): void\n+    {\n+        $xml = '<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>\n+               <!DOCTYPE foo [<!ENTITY % exfiltrate SYSTEM \"file://dev/random\">%exfiltrate;]>\n+               <foo>y</foo>';\n+        $this->expectException(RuntimeException::class);\n+        $this->expectExceptionMessage(\n+            'Dangerous XML detected, DOCTYPE nodes are not allowed in the XML body',\n+        );\n+        DOMDocumentFactory::fromString($xml);\n+    }\n+\n     /**\n      * @group                    domdocument\n      * @return void"
+        }
+      ]
+    },
+    "refs": [
+      {
+        "url": "https://github.com/simplesamlphp/saml2/commit/5fd4ce4596656fb0c1278f15b8305825412e89f7",
+        "source": "security-advisories@github.com"
+      },
+      {
+        "url": "https://github.com/simplesamlphp/saml2/security/advisories/GHSA-pxm4-r5ph-q2m2",
+        "source": "security-advisories@github.com"
+      }
+    ],
+    "CVSS": {
+      "version": "3.1",
+      "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:L/I:L/A:L",
+      "baseScore": 8.3,
+      "baseSeverity": "HIGH",
+      "attackVector": "NETWORK",
+      "attackComplexity": "LOW",
+      "privilegesRequired": "NONE",
+      "userInteraction": "NONE",
+      "scope": "CHANGED",
+      "confidentialityImpact": "LOW",
+      "integrityImpact": "LOW",
+      "availabilityImpact": "LOW"
+    }
+  },
+  {
+    "CVEID": "CVE-2024-53259",
+    "CWEIDs": [
+      "345"
+    ],
+    "Repo": "https://github.com/quic-go/quic-go",
+    "Language": "Go",
+    "VulnerableCommit": "7b769f7a31992d99f6b7058c9bc0ee1b1d89402d",
+    "PatchInfo": {
+      "URL": "https://github.com/quic-go/quic-go/commit/ca31dd355cbe5fc6c5807992d9d1149c66c96a50",
+      "Time": "2024-11-26T02:20:05Z",
+      "Message": "use IP_PMTUDISC_PROBE instead of IP_PMTUDISC_DO on Linux (#4729)",
+      "Diff": [
+        {
+          "filename": "sys_conn_df_linux.go",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2,
+          "changes": 4,
+          "patch": "@@ -16,8 +16,8 @@ func setDF(rawConn syscall.RawConn) (bool, error) {\n \t// and the datagram will not be fragmented\n \tvar errDFIPv4, errDFIPv6 error\n \tif err := rawConn.Control(func(fd uintptr) {\n-\t\terrDFIPv4 = unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_MTU_DISCOVER, unix.IP_PMTUDISC_DO)\n-\t\terrDFIPv6 = unix.SetsockoptInt(int(fd), unix.IPPROTO_IPV6, unix.IPV6_MTU_DISCOVER, unix.IPV6_PMTUDISC_DO)\n+\t\terrDFIPv4 = unix.SetsockoptInt(int(fd), unix.IPPROTO_IP, unix.IP_MTU_DISCOVER, unix.IP_PMTUDISC_PROBE)\n+\t\terrDFIPv6 = unix.SetsockoptInt(int(fd), unix.IPPROTO_IPV6, unix.IPV6_MTU_DISCOVER, unix.IPV6_PMTUDISC_PROBE)\n \t}); err != nil {\n \t\treturn false, err\n \t}"
+        }
+      ]
+    },
+    "refs": [
+      {
+        "url": "https://github.com/quic-go/quic-go/commit/ca31dd355cbe5fc6c5807992d9d1149c66c96a50",
+        "source": "security-advisories@github.com"
+      },
+      {
+        "url": "https://github.com/quic-go/quic-go/pull/4729",
+        "source": "security-advisories@github.com"
+      },
+      {
+        "url": "https://github.com/quic-go/quic-go/releases/tag/v0.48.2",
+        "source": "security-advisories@github.com"
+      },
+      {
+        "url": "https://github.com/quic-go/quic-go/security/advisories/GHSA-px8v-pp82-rcvr",
+        "source": "security-advisories@github.com"
+      }
+    ],
+    "CVSS": {
+      "version": "3.1",
+      "vectorString": "CVSS:3.1/AV:A/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+      "baseScore": 6.5,
+      "baseSeverity": "MEDIUM",
+      "attackVector": "ADJACENT_NETWORK",
+      "attackComplexity": "LOW",
+      "privilegesRequired": "NONE",
+      "userInteraction": "NONE",
+      "scope": "UNCHANGED",
+      "confidentialityImpact": "NONE",
+      "integrityImpact": "NONE",
+      "availabilityImpact": "HIGH"
+    }
+  },
+  {
+    "CVEID": "CVE-2024-53992",
+    "CWEIDs": [
+      "78"
+    ],
+    "Repo": "https://github.com/EDM115/unzip-bot",
+    "Language": "Python",
+    "VulnerableCommit": "d9255f8f9e52dcdeb7311aa37a5de3ae4ee44a92",
+    "PatchInfo": {
+      "URL": "https://github.com/EDM115/unzip-bot/commit/5213b693eabb562842cdbf21c1074e91bfa00274",
+      "Time": "2024-12-01T13:03:41Z",
+      "Message": "fix: sanitize strings another way",
+      "Diff": [
+        {
+          "filename": "unzipbot/modules/ext_script/ext_helper.py",
+          "status": "modified",
+          "additions": 10,
+          "deletions": 10,
+          "changes": 20,
+          "patch": "@@ -2,7 +2,7 @@\n import shutil\n import subprocess\n from asyncio import create_subprocess_shell, subprocess\n-from shlex import join, quote\n+from shlex import quote\n \n from pykeyboard import InlineKeyboard\n from pyrogram.types import InlineKeyboardButton\n@@ -40,7 +40,7 @@ async def cleanup_macos_artifacts(extraction_path):\n async def run_shell_cmds(command):\n     memlimit = calculate_memory_limit()\n     ulimit_cmd = [\"ulimit\", \"-v\", str(memlimit), \"&&\", command]\n-    ulimit_command = join(ulimit_cmd)\n+    ulimit_command = \" \".join(ulimit_cmd)\n     process = await create_subprocess_shell(\n         ulimit_command,\n         stdout=subprocess.PIPE,\n@@ -74,15 +74,15 @@ async def __extract_with_7z_helper(path, archive_path, password=None):\n     else:\n         cmd = [\"7z\", \"x\", f\"-o{quote(path)}\", quote(archive_path), \"-y\"]\n \n-    result = await run_shell_cmds(join(cmd))\n+    result = await run_shell_cmds(\" \".join(cmd))\n \n     return result\n \n \n async def test_with_7z_helper(archive_path):\n     password = \"dont care + didnt ask + cry about it + stay mad + get real + L\"  # skipcq: PTC-W1006, SCT-A000\n     cmd = [\"7z\", \"t\", f\"-p{quote(password)}\", quote(archive_path), \"-y\"]\n-    result = await run_shell_cmds(join(cmd))\n+    result = await run_shell_cmds(\" \".join(cmd))\n \n     return \"Everything is Ok\" in result\n \n@@ -95,23 +95,23 @@ async def __extract_with_unrar_helper(path, archive_path, password=None):\n     else:\n         cmd = [\"unrar\", \"x\", quote(archive_path), quote(path)]\n \n-    result = await run_shell_cmds(join(cmd))\n+    result = await run_shell_cmds(\" \".join(cmd))\n \n     return result\n \n \n async def test_with_unrar_helper(archive_path):\n     password = \"dont care + didnt ask + cry about it + stay mad + get real + L\"  # skipcq: PTC-W1006, SCT-A000\n     cmd = [\"unrar\", \"t\", quote(archive_path), f\"-p{quote(password)}\"]\n-    result = await run_shell_cmds(join(cmd))\n+    result = await run_shell_cmds(\" \".join(cmd))\n \n     return \"All OK\" in result\n \n \n # Extract with zstd (for .tar.zst files)\n async def __extract_with_zstd(path, archive_path):\n     cmd = [\"zstd\", \"-f\", \"--output-dir-flat\", quote(path), \"-d\", quote(archive_path)]\n-    result = await run_shell_cmds(join(cmd))\n+    result = await run_shell_cmds(\" \".join(cmd))\n \n     return result\n \n@@ -128,7 +128,7 @@ async def extr_files(path, archive_path, password=None):\n         filename = await get_files(temp_path)\n         filename = filename[0]\n         cmd = [\"tar\", \"-xvf\", quote(filename), \"-C\", quote(path)]\n-        result2 = await run_shell_cmds(join(cmd))\n+        result2 = await run_shell_cmds(\" \".join(cmd))\n         result += result2\n         shutil.rmtree(temp_path)\n     elif archive_path.endswith((\".tar.zst\", \".zst\", \".tzst\")):\n@@ -165,7 +165,7 @@ async def split_files(iinput, ooutput, size):\n         quote(temp_location),\n         f\"-v{size}b\",\n     ]\n-    await run_shell_cmds(join(cmd))\n+    await run_shell_cmds(\" \".join(cmd))\n     spdir = ooutput.replace(\"/\" + ooutput.split(\"/\")[-1], \"\")\n     files = await get_files(spdir)\n \n@@ -186,7 +186,7 @@ async def merge_files(iinput, ooutput, password=None):\n     else:\n         cmd = [\"7z\", \"x\", f\"-o{quote(ooutput)}\", quote(iinput), \"-y\"]\n \n-    result = await run_shell_cmds(join(cmd))\n+    result = await run_shell_cmds(\" \".join(cmd))\n \n     return result\n "
+        },
+        {
+          "filename": "unzipbot/modules/ext_script/up_helper.py",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 3,
+          "changes": 6,
+          "patch": "@@ -5,7 +5,7 @@\n import shutil\n from datetime import timedelta\n from time import time\n-from shlex import join, quote\n+from shlex import quote\n \n from pyrogram.errors import FloodWait, PhotoExtInvalid, PhotoSaveFileInvalid\n \n@@ -194,7 +194,7 @@ async def send_file(unzip_bot, c_id, doc_f, query, full_path, log_msg, split):\n                 \"default=noprint_wrappers=1:nokey=1\",\n                 quote(doc_f),\n             ]\n-            vid_duration = await run_shell_cmds(join(cmd))\n+            vid_duration = await run_shell_cmds(\" \".join(cmd))\n \n             if thumbornot:\n                 thumb_image = Config.THUMB_LOCATION + \"/\" + str(c_id) + \".jpg\"\n@@ -247,7 +247,7 @@ async def send_file(unzip_bot, c_id, doc_f, query, full_path, log_msg, split):\n                         \"1\",\n                         quote(thmb_pth),\n                     ]\n-                    await run_shell_cmds(join(cmd))\n+                    await run_shell_cmds(\" \".join(cmd))\n                 except Exception as e:\n                     LOGGER.warning(e)\n                     shutil.copy(Config.BOT_THUMB, thmb_pth)"
+        }
+      ]
+    },
+    "refs": [
+      {
+        "url": "https://github.com/EDM115/unzip-bot/commit/5213b693eabb562842cdbf21c1074e91bfa00274",
+        "source": "security-advisories@github.com"
+      },
+      {
+        "url": "https://github.com/EDM115/unzip-bot/security/advisories/GHSA-34cg-7f8c-fm5h",
+        "source": "security-advisories@github.com"
+      }
+    ],
+    "CVSS": {}
+  },
+  {
+    "CVEID": "CVE-2024-53990",
+    "CWEIDs": [
+      "287"
+    ],
+    "Repo": "https://github.com/AsyncHttpClient/async-http-client",
+    "Language": "Java",
+    "VulnerableCommit": "2af27154ba181c49b762c7a4a68c12b6831de093",
+    "PatchInfo": {
+      "URL": "https://github.com/AsyncHttpClient/async-http-client/commit/d5a83362f7aed81b93ebca559746ac9be0f95425",
+      "Time": "2024-12-01T19:10:55Z",
+      "Message": "[CookieStore] Only set `Cookie`s if they are not already set (#2033)\n\nThis changes the behavior of the automatic usage of the `CookieStore` to\r\navoid overwriting already-set `Cookie`s and, instead only sets them if\r\nthey do not exist yet.\r\n\r\nCloses https://github.com/AsyncHttpClient/async-http-client/issues/1964\r\n\r\nCo-authored-by: Aayush Atharva <aayush@shieldblaze.com>",
+      "Diff": [
+        {
+          "filename": "client/src/main/java/org/asynchttpclient/DefaultAsyncHttpClient.java",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1,
+          "changes": 2,
+          "patch": "@@ -235,7 +235,7 @@ public <T> ListenableFuture<T> executeRequest(Request request, AsyncHandler<T> h\n                 if (!cookies.isEmpty()) {\n                     RequestBuilder requestBuilder = request.toBuilder();\n                     for (Cookie cookie : cookies) {\n-                        requestBuilder.addOrReplaceCookie(cookie);\n+                        requestBuilder.addCookieIfUnset(cookie);\n                     }\n                     request = requestBuilder.build();\n                 }"
+        },
+        {
+          "filename": "client/src/main/java/org/asynchttpclient/RequestBuilderBase.java",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 3,
+          "changes": 21,
+          "patch": "@@ -323,6 +323,21 @@ public T addCookie(Cookie cookie) {\n      * @return this\n      */\n     public T addOrReplaceCookie(Cookie cookie) {\n+        return maybeAddOrReplaceCookie(cookie, true);\n+    }\n+\n+    /**\n+     * Add a cookie based on its name, if it does not exist yet. Cookies that\n+     * are already set will be ignored.\n+     *\n+     * @param cookie the new cookie\n+     * @return this\n+     */\n+    public T addCookieIfUnset(Cookie cookie) {\n+        return maybeAddOrReplaceCookie(cookie, false);\n+    }\n+\n+    private T maybeAddOrReplaceCookie(Cookie cookie, boolean allowReplace) {\n         String cookieKey = cookie.name();\n         boolean replace = false;\n         int index = 0;\n@@ -335,10 +350,10 @@ public T addOrReplaceCookie(Cookie cookie) {\n \n             index++;\n         }\n-        if (replace) {\n-            cookies.set(index, cookie);\n-        } else {\n+        if (!replace) {\n             cookies.add(cookie);\n+        } else if (allowReplace) {\n+            cookies.set(index, cookie);\n         }\n         return asDerivedType();\n     }"
+        },
+        {
+          "filename": "client/src/main/java/org/asynchttpclient/netty/handler/intercept/Redirect30xInterceptor.java",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 5,
+          "changes": 7,
+          "patch": "@@ -142,11 +142,8 @@ public boolean exitAfterHandlingRedirect(Channel channel, NettyResponseFuture<?>\n                 CookieStore cookieStore = config.getCookieStore();\n                 if (cookieStore != null) {\n                     // Update request's cookies assuming that cookie store is already updated by Interceptors\n-                    List<Cookie> cookies = cookieStore.get(newUri);\n-                    if (!cookies.isEmpty()) {\n-                        for (Cookie cookie : cookies) {\n-                            requestBuilder.addOrReplaceCookie(cookie);\n-                        }\n+                    for (Cookie cookie : cookieStore.get(newUri)) {\n+                        requestBuilder.addCookieIfUnset(cookie);\n                     }\n                 }\n "
+        },
+        {
+          "filename": "client/src/test/java/org/asynchttpclient/RequestBuilderTest.java",
+          "status": "modified",
+          "additions": 34,
+          "deletions": 0,
+          "changes": 34,
+          "patch": "@@ -166,6 +166,40 @@ public void testAddOrReplaceCookies() {\n         assertEquals(requestBuilder.cookies.size(), 2, \"cookie size must be 2 after adding 1 more cookie i.e. cookie3\");\n     }\n \n+    @RepeatedIfExceptionsTest(repeats = 5)\n+    public void testAddIfUnsetCookies() {\n+        RequestBuilder requestBuilder = new RequestBuilder();\n+        Cookie cookie = new DefaultCookie(\"name\", \"value\");\n+        cookie.setDomain(\"google.com\");\n+        cookie.setPath(\"/\");\n+        cookie.setMaxAge(1000);\n+        cookie.setSecure(true);\n+        cookie.setHttpOnly(true);\n+        requestBuilder.addCookieIfUnset(cookie);\n+        assertEquals(requestBuilder.cookies.size(), 1, \"cookies size should be 1 after adding one cookie\");\n+        assertEquals(requestBuilder.cookies.get(0), cookie, \"cookie does not match\");\n+\n+        Cookie cookie2 = new DefaultCookie(\"name\", \"value\");\n+        cookie2.setDomain(\"google2.com\");\n+        cookie2.setPath(\"/path\");\n+        cookie2.setMaxAge(1001);\n+        cookie2.setSecure(false);\n+        cookie2.setHttpOnly(false);\n+\n+        requestBuilder.addCookieIfUnset(cookie2);\n+        assertEquals(requestBuilder.cookies.size(), 1, \"cookies size should remain 1 as we just ignored cookie2 because of a cookie with same name\");\n+        assertEquals(requestBuilder.cookies.get(0), cookie, \"cookie does not match\");\n+\n+        Cookie cookie3 = new DefaultCookie(\"name2\", \"value\");\n+        cookie3.setDomain(\"google.com\");\n+        cookie3.setPath(\"/\");\n+        cookie3.setMaxAge(1000);\n+        cookie3.setSecure(true);\n+        cookie3.setHttpOnly(true);\n+        requestBuilder.addCookieIfUnset(cookie3);\n+        assertEquals(requestBuilder.cookies.size(), 2, \"cookie size must be 2 after adding 1 more cookie i.e. cookie3\");\n+    }\n+\n     @RepeatedIfExceptionsTest(repeats = 5)\n     public void testSettingQueryParamsBeforeUrlShouldNotProduceNPE() {\n         RequestBuilder requestBuilder = new RequestBuilder();"
+        }
+      ]
+    },
+    "refs": [
+      {
+        "url": "https://github.com/AsyncHttpClient/async-http-client/commit/d5a83362f7aed81b93ebca559746ac9be0f95425",
+        "source": "security-advisories@github.com"
+      },
+      {
+        "url": "https://github.com/AsyncHttpClient/async-http-client/issues/1964",
+        "source": "security-advisories@github.com"
+      },
+      {
+        "url": "https://github.com/AsyncHttpClient/async-http-client/pull/2033",
+        "source": "security-advisories@github.com"
+      },
+      {
+        "url": "https://github.com/AsyncHttpClient/async-http-client/security/advisories/GHSA-mfj5-cf8g-g2fv",
+        "source": "security-advisories@github.com"
+      }
+    ],
+    "CVSS": {}
+  },
+  {
+    "CVEID": "CVE-2024-53617",
+    "CWEIDs": [
+      "639",
+      "79"
+    ],
+    "Repo": "https://github.com/LibrePhotos/librephotos",
+    "Language": "Python",
+    "VulnerableCommit": "f213f4bc73dbe2ef8e43273294f84f47ab4ae453",
+    "PatchInfo": {
+      "URL": "https://github.com/LibrePhotos/librephotos/commit/32237ddc0b6293a69b983a07b5ad462fcdd6c929",
+      "Time": "2024-11-07T23:20:45Z",
+      "Message": "fix for xss file upload vulnerability",
+      "Diff": [
+        {
+          "filename": "api/views/upload.py",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 5,
+          "changes": 24,
+          "patch": "@@ -45,7 +45,7 @@ def check_permissions(self, request):\n         jwt = request.COOKIES.get(\"jwt\")\n         if jwt is not None:\n             try:\n-                AccessToken(jwt)\n+                token=AccessToken(jwt)\n             except TokenError:\n                 raise ChunkedUploadError(\n                     status=http_status.HTTP_403_FORBIDDEN,\n@@ -57,7 +57,7 @@ def check_permissions(self, request):\n                 detail=\"Authentication credentials were not provided\",\n             )\n         # To-Do: Check if file is allowed type\n-        user = User.objects.filter(id=request.POST.get(\"user\")).first()\n+        user = User.objects.filter(id=token[\"user_id\"]).first()\n         if not user or not user.is_authenticated:\n             raise ChunkedUploadError(\n                 status=http_status.HTTP_403_FORBIDDEN,\n@@ -88,7 +88,7 @@ def check_permissions(self, request):\n         jwt = request.COOKIES.get(\"jwt\")\n         if jwt is not None:\n             try:\n-                AccessToken(jwt)\n+                token=AccessToken(jwt)\n             except TokenError:\n                 raise ChunkedUploadError(\n                     status=http_status.HTTP_403_FORBIDDEN,\n@@ -99,15 +99,29 @@ def check_permissions(self, request):\n                 status=http_status.HTTP_403_FORBIDDEN,\n                 detail=\"Authentication credentials were not provided\",\n             )\n-        user = User.objects.filter(id=request.POST.get(\"user\")).first()\n+        user = User.objects.filter(id=token[\"user_id\"]).first()\n         if not user or not user.is_authenticated:\n             raise ChunkedUploadError(\n                 status=http_status.HTTP_403_FORBIDDEN,\n                 detail=\"Authentication credentials were not provided\",\n             )\n \n     def on_completion(self, uploaded_file, request):\n-        user = User.objects.filter(id=request.POST.get(\"user\")).first()\n+        jwt = request.COOKIES.get(\"jwt\")\n+        if jwt is not None:\n+            try:\n+                token=AccessToken(jwt)\n+            except TokenError:\n+                raise ChunkedUploadError(\n+                    status=http_status.HTTP_403_FORBIDDEN,\n+                    detail=\"Authentication credentials were invalid\",\n+                )\n+        else:\n+            raise ChunkedUploadError(\n+                status=http_status.HTTP_403_FORBIDDEN,\n+                detail=\"Authentication credentials were not provided\",\n+            )\n+        user = User.objects.filter(id=token[\"user_id\"]).first()\n         # Sanitize file name\n         filename = get_valid_filename(request.POST.get(\"filename\"))\n "
+        },
+        {
+          "filename": "api/views/views.py",
+          "status": "modified",
+          "additions": 8,
+          "deletions": 5,
+          "changes": 13,
+          "patch": "@@ -604,7 +604,6 @@ def get(self, request, path, fname, format=None):\n                 photo = Photo.objects.get(image_hash=image_hash)\n             except Photo.DoesNotExist:\n                 return HttpResponse(status=404)\n-\n             if photo.main_file.path.startswith(\"/nextcloud_media/\"):\n                 internal_path = photo.main_file.path.replace(\n                     \"/nextcloud_media/\", \"/nextcloud_original/\"\n@@ -617,15 +616,16 @@ def get(self, request, path, fname, format=None):\n             else:\n                 # If, for some reason, the file is in a weird place, handle that.\n                 internal_path = None\n-\n             internal_path = quote(internal_path)\n-\n             # grant access if the requested photo is public\n             if photo.public:\n                 response = HttpResponse()\n                 mime = magic.Magic(mime=True)\n                 filename = mime.from_file(photo.main_file.path)\n-                response[\"Content-Type\"] = filename\n+                if photo.video:\n+                    response[\"Content-Type\"] = filename\n+                else:\n+                    response[\"Content-Type\"] = \"image/webp\"\n                 response[\"X-Accel-Redirect\"] = internal_path\n                 return response\n \n@@ -647,7 +647,10 @@ def get(self, request, path, fname, format=None):\n                 response = HttpResponse()\n                 mime = magic.Magic(mime=True)\n                 filename = mime.from_file(photo.main_file.path)\n-                response[\"Content-Type\"] = filename\n+                if photo.video:\n+                    response[\"Content-Type\"] = filename\n+                else:\n+                    response[\"Content-Type\"] = \"image/webp\"\n                 response[\"Content-Disposition\"] = 'inline; filename=\"{}\"'.format(\n                     photo.main_file.path.split(\"/\")[-1]\n                 )"
+        }
+      ]
+    },
+    "refs": [
+      {
+        "url": "https://github.com/LibrePhotos/librephotos/commit/32237ddc0b6293a69b983a07b5ad462fcdd6c929",
+        "source": "cve@mitre.org"
+      },
+      {
+        "url": "https://github.com/LibrePhotos/librephotos/pull/1476",
+        "source": "cve@mitre.org"
+      },
+      {
+        "url": "https://github.com/ii5mai1/CVE-2024-53617",
+        "source": "cve@mitre.org"
+      }
+    ],
+    "CVSS": {
+      "version": "3.1",
+      "vectorString": "CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:L/I:L/A:N",
+      "baseScore": 4.8,
+      "baseSeverity": "MEDIUM",
+      "attackVector": "NETWORK",
+      "attackComplexity": "LOW",
+      "privilegesRequired": "HIGH",
+      "userInteraction": "REQUIRED",
+      "scope": "CHANGED",
+      "confidentialityImpact": "LOW",
+      "integrityImpact": "LOW",
+      "availabilityImpact": "NONE"
+    }
+  },
+  {
+    "CVEID": "CVE-2024-53900",
+    "CWEIDs": [
+      "89"
+    ],
+    "Repo": "https://github.com/Automattic/mongoose",
+    "Language": "JavaScript",
+    "VulnerableCommit": "b34aba65bd64540e330665477f542eb79c877909",
+    "PatchInfo": {
+      "URL": "https://github.com/Automattic/mongoose/commit/c9e86bff7eef477da75a29af62a06d41a835a156",
+      "Time": "2024-11-26T11:46:01Z",
+      "Message": "fix: disallow using $where in match\n\nFix CVE-2024-53900",
+      "Diff": [
+        {
+          "filename": "lib/helpers/populate/assignVals.js",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 5,
+          "changes": 6,
+          "patch": "@@ -249,7 +249,7 @@ function numDocs(v) {\n \n function valueFilter(val, assignmentOpts, populateOptions, allIds) {\n   const userSpecifiedTransform = typeof populateOptions.transform === 'function';\n-  const transform = userSpecifiedTransform ? populateOptions.transform : noop;\n+  const transform = userSpecifiedTransform ? populateOptions.transform : v => v;\n   if (Array.isArray(val)) {\n     // find logic\n     const ret = [];\n@@ -341,7 +341,3 @@ function isPopulatedObject(obj) {\n     obj.$__ != null ||\n     leanPopulateMap.has(obj);\n }\n-\n-function noop(v) {\n-  return v;\n-}"
+        },
+        {
+          "filename": "lib/helpers/populate/getModelsMapForPopulate.js",
+          "status": "modified",
+          "additions": 19,
+          "deletions": 0,
+          "changes": 19,
+          "patch": "@@ -184,6 +184,15 @@ module.exports = function getModelsMapForPopulate(model, docs, options) {\n     if (hasMatchFunction) {\n       match = match.call(doc, doc);\n     }\n+    if (Array.isArray(match)) {\n+      for (const item of match) {\n+        if (item != null && item.$where) {\n+          throw new MongooseError('Cannot use $where filter with populate() match');\n+        }\n+      }\n+    } else if (match != null && match.$where != null) {\n+      throw new MongooseError('Cannot use $where filter with populate() match');\n+    }\n     data.match = match;\n     data.hasMatchFunction = hasMatchFunction;\n     data.isRefPath = isRefPath;\n@@ -447,6 +456,16 @@ function _virtualPopulate(model, docs, options, _virtualRes) {\n     data.match = match;\n     data.hasMatchFunction = hasMatchFunction;\n \n+    if (Array.isArray(match)) {\n+      for (const item of match) {\n+        if (item != null && item.$where) {\n+          throw new MongooseError('Cannot use $where filter with populate() match');\n+        }\n+      }\n+    } else if (match != null && match.$where != null) {\n+      throw new MongooseError('Cannot use $where filter with populate() match');\n+    }\n+\n     // Get local fields\n     const ret = _getLocalFieldValues(doc, localField, model, options, virtual);\n "
+        },
+        {
+          "filename": "test/model.populate.test.js",
+          "status": "modified",
+          "additions": 46,
+          "deletions": 0,
+          "changes": 46,
+          "patch": "@@ -3641,6 +3641,52 @@ describe('model: populate:', function() {\n         assert.deepEqual(band.members.map(b => b.name).sort(), ['AA', 'AB']);\n       });\n \n+      it('match prevents using $where', async function() {\n+        const ParentSchema = new Schema({\n+          name: String,\n+          child: {\n+            type: mongoose.Schema.Types.ObjectId,\n+            ref: 'Child'\n+          },\n+          children: [{\n+            type: mongoose.Schema.Types.ObjectId,\n+            ref: 'Child'\n+          }]\n+        });\n+\n+        const ChildSchema = new Schema({\n+          name: String\n+        });\n+        ChildSchema.virtual('parent', {\n+          ref: 'Parent',\n+          localField: '_id',\n+          foreignField: 'parent'\n+        });\n+\n+        const Parent = db.model('Parent', ParentSchema);\n+        const Child = db.model('Child', ChildSchema);\n+\n+        const child = await Child.create({ name: 'Luke' });\n+        const parent = await Parent.create({ name: 'Anakin', child: child._id });\n+\n+        await assert.rejects(\n+          () => Parent.findOne().populate({ path: 'child', match: { $where: 'console.log(\"oops!\");' } }),\n+          /Cannot use \\$where filter with populate\\(\\) match/\n+        );\n+        await assert.rejects(\n+          () => Parent.find().populate({ path: 'child', match: { $where: 'console.log(\"oops!\");' } }),\n+          /Cannot use \\$where filter with populate\\(\\) match/\n+        );\n+        await assert.rejects(\n+          () => parent.populate({ path: 'child', match: { $where: 'console.log(\"oops!\");' } }),\n+          /Cannot use \\$where filter with populate\\(\\) match/\n+        );\n+        await assert.rejects(\n+          () => Child.find().populate({ path: 'parent', match: { $where: 'console.log(\"oops!\");' } }),\n+          /Cannot use \\$where filter with populate\\(\\) match/\n+        );\n+      });\n+\n       it('multiple source docs', async function() {\n         const PersonSchema = new Schema({\n           name: String,"
+        }
+      ]
+    },
+    "refs": [
+      {
+        "url": "https://github.com/Automattic/mongoose/blob/master/CHANGELOG.md",
+        "source": "cve@mitre.org"
+      },
+      {
+        "url": "https://github.com/Automattic/mongoose/commit/c9e86bff7eef477da75a29af62a06d41a835a156",
+        "source": "cve@mitre.org"
+      },
+      {
+        "url": "https://github.com/Automattic/mongoose/releases",
+        "source": "cve@mitre.org"
+      },
+      {
+        "url": "https://github.com/advisories/GHSA-m7xq-9374-9rvx",
+        "source": "cve@mitre.org"
+      },
+      {
+        "url": "https://www.npmjs.com/package/mongoose?activeTab=versions",
+        "source": "cve@mitre.org"
+      }
+    ],
+    "CVSS": {
+      "version": "3.1",
+      "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+      "baseScore": 9.1,
+      "baseSeverity": "CRITICAL",
+      "attackVector": "NETWORK",
+      "attackComplexity": "LOW",
+      "privilegesRequired": "NONE",
+      "userInteraction": "NONE",
+      "scope": "UNCHANGED",
+      "confidentialityImpact": "HIGH",
+      "integrityImpact": "HIGH",
+      "availabilityImpact": "NONE"
+    }
+  },
+  {
+    "CVEID": "CVE-2024-53257",
+    "CWEIDs": [
+      "79"
+    ],
+    "Repo": "https://github.com/vitessio/vitess",
+    "Language": "Go",
+    "VulnerableCommit": "68b25b30f210511eda149fe96871704ec800ab18",
+    "PatchInfo": {
+      "URL": "https://github.com/vitessio/vitess/commit/2b71d1b5f8ca676beeab2875525003cd45096217",
+      "Time": "2024-12-02T15:47:59Z",
+      "Message": "Merge commit from fork\n\nThese templates were rendered using text/template which is fundamentally\nbroken as it would allow for trivial HTML injection.\n\nInstead render using safehtml/template so that we have automatic\nescaping.\n\nSigned-off-by: Dirkjan Bussink <d.bussink@gmail.com>",
+      "Diff": [
+        {
+          "filename": "go/vt/vtgate/debugenv.go",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1,
+          "changes": 3,
+          "patch": "@@ -22,9 +22,10 @@ import (\n \t\"html\"\n \t\"net/http\"\n \t\"strconv\"\n-\t\"text/template\"\n \t\"time\"\n \n+\t\"github.com/google/safehtml/template\"\n+\n \t\"vitess.io/vitess/go/acl\"\n \t\"vitess.io/vitess/go/vt/discovery\"\n \t\"vitess.io/vitess/go/vt/log\""
+        },
+        {
+          "filename": "go/vt/vtgate/querylogz.go",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 2,
+          "changes": 4,
+          "patch": "@@ -20,15 +20,15 @@ import (\n \t\"net/http\"\n \t\"strconv\"\n \t\"strings\"\n-\t\"text/template\"\n \t\"time\"\n \n-\t\"vitess.io/vitess/go/vt/vtgate/logstats\"\n+\t\"github.com/google/safehtml/template\"\n \n \t\"vitess.io/vitess/go/acl\"\n \t\"vitess.io/vitess/go/vt/log\"\n \t\"vitess.io/vitess/go/vt/logz\"\n \t\"vitess.io/vitess/go/vt/sqlparser\"\n+\t\"vitess.io/vitess/go/vt/vtgate/logstats\"\n )\n \n var ("
+        },
+        {
+          "filename": "go/vt/vtgate/querylogz_test.go",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4,
+          "changes": 8,
+          "patch": "@@ -35,7 +35,7 @@ import (\n \n func TestQuerylogzHandlerFormatting(t *testing.T) {\n \treq, _ := http.NewRequest(\"GET\", \"/querylogz?timeout=10&limit=1\", nil)\n-\tlogStats := logstats.NewLogStats(context.Background(), \"Execute\", \"select name from test_table limit 1000\", \"suuid\", nil)\n+\tlogStats := logstats.NewLogStats(context.Background(), \"Execute\", \"select name, 'inject <script>alert();</script>' from test_table limit 1000\", \"suuid\", nil)\n \tlogStats.StmtType = \"select\"\n \tlogStats.RowsAffected = 1000\n \tlogStats.ShardQueries = 1\n@@ -64,7 +64,7 @@ func TestQuerylogzHandlerFormatting(t *testing.T) {\n \t\t`<td>0.002</td>`,\n \t\t`<td>0.003</td>`,\n \t\t`<td>select</td>`,\n-\t\t`<td>select name from test_table limit 1000</td>`,\n+\t\tregexp.QuoteMeta(`<td>select name,​ &#39;inject &lt;script&gt;alert()​;&lt;/script&gt;&#39; from test_table limit 1000</td>`),\n \t\t`<td>1</td>`,\n \t\t`<td>1000</td>`,\n \t\t`<td></td>`,\n@@ -94,7 +94,7 @@ func TestQuerylogzHandlerFormatting(t *testing.T) {\n \t\t`<td>0.002</td>`,\n \t\t`<td>0.003</td>`,\n \t\t`<td>select</td>`,\n-\t\t`<td>select name from test_table limit 1000</td>`,\n+\t\tregexp.QuoteMeta(`<td>select name,​ &#39;inject &lt;script&gt;alert()​;&lt;/script&gt;&#39; from test_table limit 1000</td>`),\n \t\t`<td>1</td>`,\n \t\t`<td>1000</td>`,\n \t\t`<td></td>`,\n@@ -124,7 +124,7 @@ func TestQuerylogzHandlerFormatting(t *testing.T) {\n \t\t`<td>0.002</td>`,\n \t\t`<td>0.003</td>`,\n \t\t`<td>select</td>`,\n-\t\t`<td>select name from test_table limit 1000</td>`,\n+\t\tregexp.QuoteMeta(`<td>select name,​ &#39;inject &lt;script&gt;alert()​;&lt;/script&gt;&#39; from test_table limit 1000</td>`),\n \t\t`<td>1</td>`,\n \t\t`<td>1000</td>`,\n \t\t`<td></td>`,"
+        },
+        {
+          "filename": "go/vt/vttablet/tabletserver/debugenv.go",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1,
+          "changes": 3,
+          "patch": "@@ -23,9 +23,10 @@ import (\n \t\"html\"\n \t\"net/http\"\n \t\"strconv\"\n-\t\"text/template\"\n \t\"time\"\n \n+\t\"github.com/google/safehtml/template\"\n+\n \t\"vitess.io/vitess/go/acl\"\n \t\"vitess.io/vitess/go/vt/log\"\n )"
+        },
+        {
+          "filename": "go/vt/vttablet/tabletserver/querylogz.go",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1,
+          "changes": 3,
+          "patch": "@@ -20,9 +20,10 @@ import (\n \t\"net/http\"\n \t\"strconv\"\n \t\"strings\"\n-\t\"text/template\"\n \t\"time\"\n \n+\t\"github.com/google/safehtml/template\"\n+\n \t\"vitess.io/vitess/go/acl\"\n \t\"vitess.io/vitess/go/vt/log\"\n \t\"vitess.io/vitess/go/vt/logz\""
+        },
+        {
+          "filename": "go/vt/vttablet/tabletserver/querylogz_test.go",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 4,
+          "changes": 8,
+          "patch": "@@ -37,7 +37,7 @@ func TestQuerylogzHandler(t *testing.T) {\n \treq, _ := http.NewRequest(\"GET\", \"/querylogz?timeout=10&limit=1\", nil)\n \tlogStats := tabletenv.NewLogStats(context.Background(), \"Execute\")\n \tlogStats.PlanType = planbuilder.PlanSelect.String()\n-\tlogStats.OriginalSQL = \"select name from test_table limit 1000\"\n+\tlogStats.OriginalSQL = \"select name, 'inject <script>alert();</script>' from test_table limit 1000\"\n \tlogStats.RowsAffected = 1000\n \tlogStats.NumberOfQueries = 1\n \tlogStats.StartTime, _ = time.Parse(\"Jan 2 15:04:05\", \"Nov 29 13:33:09\")\n@@ -64,7 +64,7 @@ func TestQuerylogzHandler(t *testing.T) {\n \t\t`<td>0.001</td>`,\n \t\t`<td>1e-08</td>`,\n \t\t`<td>Select</td>`,\n-\t\t`<td>select name from test_table limit 1000</td>`,\n+\t\tregexp.QuoteMeta(`<td>select name,​ &#39;inject &lt;script&gt;alert()​;&lt;/script&gt;&#39; from test_table limit 1000</td>`),\n \t\t`<td>1</td>`,\n \t\t`<td>none</td>`,\n \t\t`<td>1000</td>`,\n@@ -95,7 +95,7 @@ func TestQuerylogzHandler(t *testing.T) {\n \t\t`<td>0.001</td>`,\n \t\t`<td>1e-08</td>`,\n \t\t`<td>Select</td>`,\n-\t\t`<td>select name from test_table limit 1000</td>`,\n+\t\tregexp.QuoteMeta(`<td>select name,​ &#39;inject &lt;script&gt;alert()​;&lt;/script&gt;&#39; from test_table limit 1000</td>`),\n \t\t`<td>1</td>`,\n \t\t`<td>none</td>`,\n \t\t`<td>1000</td>`,\n@@ -126,7 +126,7 @@ func TestQuerylogzHandler(t *testing.T) {\n \t\t`<td>0.001</td>`,\n \t\t`<td>1e-08</td>`,\n \t\t`<td>Select</td>`,\n-\t\t`<td>select name from test_table limit 1000</td>`,\n+\t\tregexp.QuoteMeta(`<td>select name,​ &#39;inject &lt;script&gt;alert()​;&lt;/script&gt;&#39; from test_table limit 1000</td>`),\n \t\t`<td>1</td>`,\n \t\t`<td>none</td>`,\n \t\t`<td>1000</td>`,"
+        }
+      ]
+    },
+    "refs": [
+      {
+        "url": "https://github.com/vitessio/vitess/commit/2b71d1b5f8ca676beeab2875525003cd45096217",
+        "source": "security-advisories@github.com"
+      },
+      {
+        "url": "https://github.com/vitessio/vitess/security/advisories/GHSA-7mwh-q3xm-qh6p",
+        "source": "security-advisories@github.com"
+      }
+    ],
+    "CVSS": {
+      "version": "3.1",
+      "vectorString": "CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:U/C:N/I:H/A:N",
+      "baseScore": 4.9,
+      "baseSeverity": "MEDIUM",
+      "attackVector": "NETWORK",
+      "attackComplexity": "LOW",
+      "privilegesRequired": "HIGH",
+      "userInteraction": "NONE",
+      "scope": "UNCHANGED",
+      "confidentialityImpact": "NONE",
+      "integrityImpact": "HIGH",
+      "availabilityImpact": "NONE"
+    }
+  },
+  {
+    "CVEID": "CVE-2024-53999",
+    "CWEIDs": [
+      "79"
+    ],
+    "Repo": "https://github.com/MobSF/Mobile-Security-Framework-MobSF",
+    "Language": "JavaScript",
+    "VulnerableCommit": "0d3b1ec3b9f61ee68d349c1cc10d53ee96eef3f2",
+    "PatchInfo": {
+      "URL": "https://github.com/MobSF/Mobile-Security-Framework-MobSF/commit/27d165872847f5ae7417caf09f37edeeba741e1e",
+      "Time": "2024-12-03T06:33:01Z",
+      "Message": "Fixes a stored XSS in Recent Scans diff APK, GHSA-5jc6-h9w7-jm3p",
+      "Diff": [
+        {
+          "filename": "mobsf/MobSF/init.py",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1,
+          "changes": 2,
+          "patch": "@@ -18,7 +18,7 @@\n \n logger = logging.getLogger(__name__)\n \n-VERSION = '4.2.8'\n+VERSION = '4.2.9'\n BANNER = r\"\"\"\n   __  __       _    ____  _____       _  _    ____  \n  |  \\/  | ___ | |__/ ___||  ___|_   _| || |  |___ \\ "
+        },
+        {
+          "filename": "mobsf/MobSF/views/home.py",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1,
+          "changes": 2,
+          "patch": "@@ -163,7 +163,7 @@ def upload(self):\n         request = self.request\n         scanning = Scanning(request)\n         content_type = self.file.content_type\n-        file_name = self.file.name\n+        file_name = sanitize_filename(self.file.name)\n         logger.info('MIME Type: %s FILE: %s', content_type, file_name)\n         if self.file_type.is_apk():\n             return scanning.scan_apk()"
+        },
+        {
+          "filename": "mobsf/MobSF/views/scanning.py",
+          "status": "modified",
+          "additions": 3,
+          "deletions": 1,
+          "changes": 4,
+          "patch": "@@ -8,6 +8,7 @@\n from django.utils import timezone\n \n from mobsf.StaticAnalyzer.models import RecentScansDB\n+from mobsf.MobSF.security import sanitize_filename\n \n logger = logging.getLogger(__name__)\n \n@@ -62,7 +63,8 @@ class Scanning(object):\n \n     def __init__(self, request):\n         self.file = request.FILES['file']\n-        self.file_name = request.FILES['file'].name\n+        self.file_name = sanitize_filename(\n+            request.FILES['file'].name)\n         self.data = {\n             'analyzer': 'static_analyzer',\n             'status': 'success',"
+        },
+        {
+          "filename": "mobsf/templates/general/recent.html",
+          "status": "modified",
+          "additions": 15,
+          "deletions": 3,
+          "changes": 18,
+          "patch": "@@ -184,6 +184,18 @@ <h3 class=\"box-title\"><i class=\"fa fa-rocket\"></i> Recent Scans</h3>\n {% block extra_scripts %}\n <script src=\"{% static \"adminlte/plugins/sweetalert2/sweetalert2.min.js\" %}\"></script>\n <script>\n+\n+    // Escape HTML\n+    function escapeHtml(unsafe)\n+    {\n+        return unsafe\n+            .replace(/&/g, \"&amp;\")\n+            .replace(/</g, \"&lt;\")\n+            .replace(/>/g, \"&gt;\")\n+            .replace(/\"/g, \"&quot;\")\n+            .replace(/'/g, \"&#039;\");\n+    }\n+\n     // Diff functions\n     var diff_first_md5 = '';\n     var diff_first_name = '';\n@@ -231,7 +243,7 @@ <h3 class=\"box-title\"><i class=\"fa fa-rocket\"></i> Recent Scans</h3>\n     }\n \n     function diff_cleanup() {\n-        first_td_id = diff_first_md5 + '_' + diff_first_name;\n+        first_td_id = diff_first_md5 + '_' + escapeHtml(diff_first_name);\n         $('[id=\"' + first_td_id + '\"]').closest(\"tr\").removeClass(\"selected\");\n         $('[id=\"' + first_td_id + '\"]').closest(\"tbody\").removeClass(\"selectable_table\");\n         diff_first_md5 = \"\";\n@@ -254,8 +266,8 @@ <h3 class=\"box-title\"><i class=\"fa fa-rocket\"></i> Recent Scans</h3>\n             title: '<strong>Diff confirmation</strong>',\n             type: 'info',\n             html:\n-                '<strong>Do you want to diff - </strong><br />' + diff_first_name +\n-                '<br /> <strong>with - <br /> </strong>' + diff_second_name + ' <br /> <strong>?</strong>',\n+                '<strong>Do you want to diff - </strong><br />' + escapeHtml(diff_first_name) +\n+                '<br /> <strong>with - <br /> </strong>' + escapeHtml(diff_second_name) + ' <br /> <strong>?</strong>',\n \n             showCancelButton: true,\n             cancelButtonText: 'Cancel',"
+        },
+        {
+          "filename": "pyproject.toml",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1,
+          "changes": 2,
+          "patch": "@@ -1,6 +1,6 @@\n [tool.poetry]\n name = \"mobsf\"\n-version = \"4.2.8\"\n+version = \"4.2.9\"\n description = \"Mobile Security Framework (MobSF) is an automated, all-in-one mobile application (Android/iOS/Windows) pen-testing, malware analysis and security assessment framework capable of performing static and dynamic analysis.\"\n keywords = [\"mobsf\", \"mobile security framework\", \"mobile security\", \"security tool\", \"static analysis\", \"dynamic analysis\", \"malware analysis\"]\n authors = [\"Ajin Abraham <ajin@opensecurity.in>\"]"
+        }
+      ]
+    },
+    "refs": [
+      {
+        "url": "https://github.com/MobSF/Mobile-Security-Framework-MobSF/commit/27d165872847f5ae7417caf09f37edeeba741e1e",
+        "source": "security-advisories@github.com",
+        "tags": [
+          "Patch"
+        ]
+      },
+      {
+        "url": "https://github.com/MobSF/Mobile-Security-Framework-MobSF/security/advisories/GHSA-5jc6-h9w7-jm3p",
+        "source": "security-advisories@github.com",
+        "tags": [
+          "Exploit",
+          "Vendor Advisory"
+        ]
+      }
+    ],
+    "CVSS": {
+      "version": "3.1",
+      "vectorString": "CVSS:3.1/AV:N/AC:L/PR:H/UI:R/S:C/C:H/I:H/A:N",
+      "baseScore": 8.1,
+      "baseSeverity": "HIGH",
+      "attackVector": "NETWORK",
+      "attackComplexity": "LOW",
+      "privilegesRequired": "HIGH",
+      "userInteraction": "REQUIRED",
+      "scope": "CHANGED",
+      "confidentialityImpact": "HIGH",
+      "integrityImpact": "HIGH",
+      "availabilityImpact": "NONE"
+    }
+  },
+  {
+    "CVEID": "CVE-2024-54000",
+    "CWEIDs": [
+      "918"
+    ],
+    "Repo": "https://github.com/MobSF/Mobile-Security-Framework-MobSF",
+    "Language": "JavaScript",
+    "VulnerableCommit": "7645cee99e29af0dcedddcfba73b8d2c048a63a0",
+    "PatchInfo": {
+      "URL": "https://github.com/MobSF/Mobile-Security-Framework-MobSF/commit/f22c584aa7d43527970c9da61eb678953cfc0a8e",
+      "Time": "2024-03-22T23:43:43Z",
+      "Message": "Fixes GHSA-m435-9v6r-v5f6",
+      "Diff": [
+        {
+          "filename": "mobsf/StaticAnalyzer/views/android/manifest_analysis.py",
+          "status": "modified",
+          "additions": 4,
+          "deletions": 1,
+          "changes": 5,
+          "patch": "@@ -84,12 +84,15 @@ def _check_url(host, w_url):\n         status_code = 0\n \n         r = requests.get(w_url,\n-            allow_redirects=True,\n+            allow_redirects=False,\n             proxies=proxies,\n             verify=verify,\n             timeout=5)\n \n         status_code = r.status_code\n+        if status_code == 302:\n+            logger.warning('302 Redirect detected, skipping check')\n+            status = False\n         if (str(status_code).startswith('2') and iden in str(r.json())):\n             status = True\n "
+        }
+      ]
+    },
+    "refs": [
+      {
+        "url": "https://github.com/MobSF/Mobile-Security-Framework-MobSF/commit/f22c584aa7d43527970c9da61eb678953cfc0a8e",
+        "source": "security-advisories@github.com",
+        "tags": [
+          "Patch"
+        ]
+      },
+      {
+        "url": "https://github.com/MobSF/Mobile-Security-Framework-MobSF/security/advisories/GHSA-m435-9v6r-v5f6",
+        "source": "security-advisories@github.com",
+        "tags": [
+          "Vendor Advisory"
+        ]
+      }
+    ],
+    "CVSS": {
+      "version": "3.1",
+      "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+      "baseScore": 7.5,
+      "baseSeverity": "HIGH",
+      "attackVector": "NETWORK",
+      "attackComplexity": "LOW",
+      "privilegesRequired": "NONE",
+      "userInteraction": "NONE",
+      "scope": "UNCHANGED",
+      "confidentialityImpact": "HIGH",
+      "integrityImpact": "NONE",
+      "availabilityImpact": "NONE"
+    }
+  },
+  {
+    "CVEID": "CVE-2024-54132",
+    "CWEIDs": [
+      "22"
+    ],
+    "Repo": "https://github.com/cli/cli",
+    "Language": "Go",
+    "VulnerableCommit": "7c241cf4e617b0d7a7e9fce3e3b13a07c6c1c249",
+    "PatchInfo": {
+      "URL": "https://github.com/cli/cli/commit/1136764c369aaf0cae4ec2ee09dc35d871076932",
+      "Time": "2024-12-03T23:12:05Z",
+      "Message": "Merge commit from fork\n\nThe fix",
+      "Diff": [
+        {
+          "filename": "pkg/cmd/run/download/download.go",
+          "status": "modified",
+          "additions": 29,
+          "deletions": 2,
+          "changes": 31,
+          "patch": "@@ -151,8 +151,10 @@ func runDownload(opts *DownloadOptions) error {\n \topts.IO.StartProgressIndicator()\n \tdefer opts.IO.StopProgressIndicator()\n \n-\t// track downloaded artifacts and avoid re-downloading any of the same name\n+\t// track downloaded artifacts and avoid re-downloading any of the same name, isolate if multiple artifacts\n \tdownloaded := set.NewStringSet()\n+\tisolateArtifacts := isolateArtifacts(wantNames, wantPatterns)\n+\n \tfor _, a := range artifacts {\n \t\tif a.Expired {\n \t\t\tcontinue\n@@ -165,10 +167,16 @@ func runDownload(opts *DownloadOptions) error {\n \t\t\t\tcontinue\n \t\t\t}\n \t\t}\n+\n \t\tdestDir := opts.DestinationDir\n-\t\tif len(wantPatterns) != 0 || len(wantNames) != 1 {\n+\t\tif isolateArtifacts {\n \t\t\tdestDir = filepath.Join(destDir, a.Name)\n \t\t}\n+\n+\t\tif !filepathDescendsFrom(destDir, opts.DestinationDir) {\n+\t\t\treturn fmt.Errorf(\"error downloading %s: would result in path traversal\", a.Name)\n+\t\t}\n+\n \t\terr := opts.Platform.Download(a.DownloadURL, destDir)\n \t\tif err != nil {\n \t\t\treturn fmt.Errorf(\"error downloading %s: %w\", a.Name, err)\n@@ -183,6 +191,25 @@ func runDownload(opts *DownloadOptions) error {\n \treturn nil\n }\n \n+func isolateArtifacts(wantNames []string, wantPatterns []string) bool {\n+\tif len(wantPatterns) > 0 {\n+\t\t// Patterns can match multiple artifacts\n+\t\treturn true\n+\t}\n+\n+\tif len(wantNames) == 0 {\n+\t\t// All artifacts wanted regardless what they are named\n+\t\treturn true\n+\t}\n+\n+\tif len(wantNames) > 1 {\n+\t\t// Multiple, specific artifacts wanted\n+\t\treturn true\n+\t}\n+\n+\treturn false\n+}\n+\n func matchAnyName(names []string, name string) bool {\n \tfor _, n := range names {\n \t\tif name == n {"
+        },
+        {
+          "filename": "pkg/cmd/run/download/download_test.go",
+          "status": "modified",
+          "additions": 500,
+          "deletions": 123,
+          "changes": 623,
+          "patch": "@@ -2,8 +2,11 @@ package download\n \n import (\n \t\"bytes\"\n+\t\"errors\"\n+\t\"fmt\"\n \t\"io\"\n \t\"net/http\"\n+\t\"os\"\n \t\"path/filepath\"\n \t\"testing\"\n \n@@ -14,7 +17,6 @@ import (\n \t\"github.com/cli/cli/v2/pkg/iostreams\"\n \t\"github.com/google/shlex\"\n \t\"github.com/stretchr/testify/assert\"\n-\t\"github.com/stretchr/testify/mock\"\n \t\"github.com/stretchr/testify/require\"\n )\n \n@@ -143,159 +145,537 @@ func Test_NewCmdDownload(t *testing.T) {\n \t}\n }\n \n+type testArtifact struct {\n+\tartifact shared.Artifact\n+\tfiles    []string\n+}\n+\n+type fakePlatform struct {\n+\trunArtifacts map[string][]testArtifact\n+}\n+\n+func (f *fakePlatform) List(runID string) ([]shared.Artifact, error) {\n+\tvar runIds []string\n+\tif runID != \"\" {\n+\t\trunIds = []string{runID}\n+\t} else {\n+\t\tfor k := range f.runArtifacts {\n+\t\t\trunIds = append(runIds, k)\n+\t\t}\n+\t}\n+\n+\tvar artifacts []shared.Artifact\n+\tfor _, id := range runIds {\n+\t\tfor _, a := range f.runArtifacts[id] {\n+\t\t\tartifacts = append(artifacts, a.artifact)\n+\t\t}\n+\t}\n+\n+\treturn artifacts, nil\n+}\n+\n+func (f *fakePlatform) Download(url string, dir string) error {\n+\tif err := os.MkdirAll(dir, 0755); err != nil {\n+\t\treturn err\n+\t}\n+\t// Now to be consistent, we find the artifact with the provided URL.\n+\t// It's a bit janky to iterate the runs, to find the right artifact\n+\t// rather than keying directly to it, but it allows the setup of the\n+\t// fake platform to be declarative rather than imperative.\n+\t// Think fakePlatform { artifacts: ... } rather than fakePlatform.makeArtifactAvailable()\n+\tfor _, testArtifacts := range f.runArtifacts {\n+\t\tfor _, testArtifact := range testArtifacts {\n+\t\t\tif testArtifact.artifact.DownloadURL == url {\n+\t\t\t\tfor _, file := range testArtifact.files {\n+\t\t\t\t\tpath := filepath.Join(dir, file)\n+\t\t\t\t\treturn os.WriteFile(path, []byte{}, 0600)\n+\t\t\t\t}\n+\t\t\t}\n+\t\t}\n+\t}\n+\n+\treturn errors.New(\"no artifact matches the provided URL\")\n+}\n+\n func Test_runDownload(t *testing.T) {\n \ttests := []struct {\n-\t\tname        string\n-\t\topts        DownloadOptions\n-\t\tmockAPI     func(*mockPlatform)\n-\t\tpromptStubs func(*prompter.MockPrompter)\n-\t\twantErr     string\n+\t\tname          string\n+\t\topts          DownloadOptions\n+\t\tplatform      *fakePlatform\n+\t\tpromptStubs   func(*prompter.MockPrompter)\n+\t\texpectedFiles []string\n+\t\twantErr       string\n \t}{\n \t\t{\n-\t\t\tname: \"download non-expired\",\n+\t\t\tname: \"download non-expired to relative directory\",\n \t\t\topts: DownloadOptions{\n \t\t\t\tRunID:          \"2345\",\n \t\t\t\tDestinationDir: \"./tmp\",\n-\t\t\t\tNames:          []string(nil),\n \t\t\t},\n-\t\t\tmockAPI: func(p *mockPlatform) {\n-\t\t\t\tp.On(\"List\", \"2345\").Return([]shared.Artifact{\n-\t\t\t\t\t{\n-\t\t\t\t\t\tName:        \"artifact-1\",\n-\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n-\t\t\t\t\t\tExpired:     false,\n-\t\t\t\t\t},\n-\t\t\t\t\t{\n-\t\t\t\t\t\tName:        \"expired-artifact\",\n-\t\t\t\t\t\tDownloadURL: \"http://download.com/expired.zip\",\n-\t\t\t\t\t\tExpired:     true,\n+\t\t\tplatform: &fakePlatform{\n+\t\t\t\trunArtifacts: map[string][]testArtifact{\n+\t\t\t\t\t\"2345\": {\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-1\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-1-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"expired-artifact\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/expired.zip\",\n+\t\t\t\t\t\t\t\tExpired:     true,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"expired\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-2\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact2.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-2-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n \t\t\t\t\t},\n-\t\t\t\t\t{\n-\t\t\t\t\t\tName:        \"artifact-2\",\n-\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact2.zip\",\n-\t\t\t\t\t\tExpired:     false,\n-\t\t\t\t\t},\n-\t\t\t\t}, nil)\n-\t\t\t\tp.On(\"Download\", \"http://download.com/artifact1.zip\", filepath.FromSlash(\"tmp/artifact-1\")).Return(nil)\n-\t\t\t\tp.On(\"Download\", \"http://download.com/artifact2.zip\", filepath.FromSlash(\"tmp/artifact-2\")).Return(nil)\n+\t\t\t\t},\n+\t\t\t},\n+\t\t\texpectedFiles: []string{\n+\t\t\t\tfilepath.Join(\"artifact-1\", \"artifact-1-file\"),\n+\t\t\t\tfilepath.Join(\"artifact-2\", \"artifact-2-file\"),\n \t\t\t},\n \t\t},\n \t\t{\n-\t\t\tname: \"no valid artifacts\",\n+\t\t\tname: \"download non-expired to absolute directory\",\n \t\t\topts: DownloadOptions{\n \t\t\t\tRunID:          \"2345\",\n-\t\t\t\tDestinationDir: \".\",\n-\t\t\t\tNames:          []string(nil),\n+\t\t\t\tDestinationDir: \"/tmp\",\n \t\t\t},\n-\t\t\tmockAPI: func(p *mockPlatform) {\n-\t\t\t\tp.On(\"List\", \"2345\").Return([]shared.Artifact{\n-\t\t\t\t\t{\n-\t\t\t\t\t\tName:        \"artifact-1\",\n-\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n-\t\t\t\t\t\tExpired:     true,\n+\t\t\tplatform: &fakePlatform{\n+\t\t\t\trunArtifacts: map[string][]testArtifact{\n+\t\t\t\t\t\"2345\": {\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-1\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-1-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"expired-artifact\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/expired.zip\",\n+\t\t\t\t\t\t\t\tExpired:     true,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"expired\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-2\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact2.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-2-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n \t\t\t\t\t},\n-\t\t\t\t\t{\n-\t\t\t\t\t\tName:        \"artifact-2\",\n-\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact2.zip\",\n-\t\t\t\t\t\tExpired:     true,\n+\t\t\t\t},\n+\t\t\t},\n+\t\t\texpectedFiles: []string{\n+\t\t\t\tfilepath.Join(\"artifact-1\", \"artifact-1-file\"),\n+\t\t\t\tfilepath.Join(\"artifact-2\", \"artifact-2-file\"),\n+\t\t\t},\n+\t\t},\n+\t\t{\n+\t\t\tname: \"all artifacts are expired\",\n+\t\t\topts: DownloadOptions{\n+\t\t\t\tRunID: \"2345\",\n+\t\t\t},\n+\t\t\tplatform: &fakePlatform{\n+\t\t\t\trunArtifacts: map[string][]testArtifact{\n+\t\t\t\t\t\"2345\": {\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-1\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n+\t\t\t\t\t\t\t\tExpired:     true,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-1-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-2\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact2.zip\",\n+\t\t\t\t\t\t\t\tExpired:     true,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-2-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n \t\t\t\t\t},\n-\t\t\t\t}, nil)\n+\t\t\t\t},\n \t\t\t},\n-\t\t\twantErr: \"no valid artifacts found to download\",\n+\t\t\texpectedFiles: []string{},\n+\t\t\twantErr:       \"no valid artifacts found to download\",\n \t\t},\n \t\t{\n \t\t\tname: \"no name matches\",\n \t\t\topts: DownloadOptions{\n-\t\t\t\tRunID:          \"2345\",\n-\t\t\t\tDestinationDir: \".\",\n-\t\t\t\tNames:          []string{\"artifact-3\"},\n-\t\t\t},\n-\t\t\tmockAPI: func(p *mockPlatform) {\n-\t\t\t\tp.On(\"List\", \"2345\").Return([]shared.Artifact{\n-\t\t\t\t\t{\n-\t\t\t\t\t\tName:        \"artifact-1\",\n-\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n-\t\t\t\t\t\tExpired:     false,\n+\t\t\t\tRunID: \"2345\",\n+\t\t\t\tNames: []string{\"artifact-3\"},\n+\t\t\t},\n+\t\t\tplatform: &fakePlatform{\n+\t\t\t\trunArtifacts: map[string][]testArtifact{\n+\t\t\t\t\t\"2345\": {\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-1\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-1-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-2\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact2.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-2-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n \t\t\t\t\t},\n-\t\t\t\t\t{\n-\t\t\t\t\t\tName:        \"artifact-2\",\n-\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact2.zip\",\n-\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t},\n+\t\t\t},\n+\t\t\texpectedFiles: []string{},\n+\t\t\twantErr:       \"no artifact matches any of the names or patterns provided\",\n+\t\t},\n+\t\t{\n+\t\t\tname: \"pattern matches\",\n+\t\t\topts: DownloadOptions{\n+\t\t\t\tRunID:        \"2345\",\n+\t\t\t\tFilePatterns: []string{\"artifact-*\"},\n+\t\t\t},\n+\t\t\tplatform: &fakePlatform{\n+\t\t\t\trunArtifacts: map[string][]testArtifact{\n+\t\t\t\t\t\"2345\": {\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-1\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-1-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"non-artifact-2\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/non-artifact-2.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"non-artifact-2-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-3\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact3.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-3-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n \t\t\t\t\t},\n-\t\t\t\t}, nil)\n+\t\t\t\t},\n+\t\t\t},\n+\t\t\texpectedFiles: []string{\n+\t\t\t\tfilepath.Join(\"artifact-1\", \"artifact-1-file\"),\n+\t\t\t\tfilepath.Join(\"artifact-3\", \"artifact-3-file\"),\n \t\t\t},\n-\t\t\twantErr: \"no artifact matches any of the names or patterns provided\",\n \t\t},\n \t\t{\n \t\t\tname: \"no pattern matches\",\n \t\t\topts: DownloadOptions{\n-\t\t\t\tRunID:          \"2345\",\n-\t\t\t\tDestinationDir: \".\",\n-\t\t\t\tFilePatterns:   []string{\"artifiction-*\"},\n-\t\t\t},\n-\t\t\tmockAPI: func(p *mockPlatform) {\n-\t\t\t\tp.On(\"List\", \"2345\").Return([]shared.Artifact{\n-\t\t\t\t\t{\n-\t\t\t\t\t\tName:        \"artifact-1\",\n-\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n-\t\t\t\t\t\tExpired:     false,\n+\t\t\t\tRunID:        \"2345\",\n+\t\t\t\tFilePatterns: []string{\"artifiction-*\"},\n+\t\t\t},\n+\t\t\tplatform: &fakePlatform{\n+\t\t\t\trunArtifacts: map[string][]testArtifact{\n+\t\t\t\t\t\"2345\": {\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-1\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-1-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-2\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact2.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-2-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n \t\t\t\t\t},\n-\t\t\t\t\t{\n-\t\t\t\t\t\tName:        \"artifact-2\",\n-\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact2.zip\",\n-\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t},\n+\t\t\t},\n+\t\t\texpectedFiles: []string{},\n+\t\t\twantErr:       \"no artifact matches any of the names or patterns provided\",\n+\t\t},\n+\t\t{\n+\t\t\tname: \"want specific single artifact\",\n+\t\t\topts: DownloadOptions{\n+\t\t\t\tRunID: \"2345\",\n+\t\t\t\tNames: []string{\"non-artifact-2\"},\n+\t\t\t},\n+\t\t\tplatform: &fakePlatform{\n+\t\t\t\trunArtifacts: map[string][]testArtifact{\n+\t\t\t\t\t\"2345\": {\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-1\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-1-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"non-artifact-2\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/non-artifact-2.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"non-artifact-2-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-3\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact3.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-3-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n \t\t\t\t\t},\n-\t\t\t\t}, nil)\n+\t\t\t\t},\n+\t\t\t},\n+\t\t\texpectedFiles: []string{\n+\t\t\t\tfilepath.Join(\"non-artifact-2-file\"),\n \t\t\t},\n-\t\t\twantErr: \"no artifact matches any of the names or patterns provided\",\n \t\t},\n \t\t{\n-\t\t\tname: \"prompt to select artifact\",\n+\t\t\tname: \"want specific multiple artifacts\",\n \t\t\topts: DownloadOptions{\n-\t\t\t\tRunID:          \"\",\n-\t\t\t\tDoPrompt:       true,\n-\t\t\t\tDestinationDir: \".\",\n-\t\t\t\tNames:          []string(nil),\n+\t\t\t\tRunID: \"2345\",\n+\t\t\t\tNames: []string{\"artifact-1\", \"artifact-3\"},\n \t\t\t},\n-\t\t\tmockAPI: func(p *mockPlatform) {\n-\t\t\t\tp.On(\"List\", \"\").Return([]shared.Artifact{\n-\t\t\t\t\t{\n-\t\t\t\t\t\tName:        \"artifact-1\",\n-\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n-\t\t\t\t\t\tExpired:     false,\n+\t\t\tplatform: &fakePlatform{\n+\t\t\t\trunArtifacts: map[string][]testArtifact{\n+\t\t\t\t\t\"2345\": {\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-1\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-1-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"non-artifact-2\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/non-artifact-2.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"non-artifact-2-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-3\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact3.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-3-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n \t\t\t\t\t},\n-\t\t\t\t\t{\n-\t\t\t\t\t\tName:        \"expired-artifact\",\n-\t\t\t\t\t\tDownloadURL: \"http://download.com/expired.zip\",\n-\t\t\t\t\t\tExpired:     true,\n+\t\t\t\t},\n+\t\t\t},\n+\t\t\texpectedFiles: []string{\n+\t\t\t\tfilepath.Join(\"artifact-1\", \"artifact-1-file\"),\n+\t\t\t\tfilepath.Join(\"artifact-3\", \"artifact-3-file\"),\n+\t\t\t},\n+\t\t},\n+\t\t{\n+\t\t\tname: \"avoid redownloading files of the same name\",\n+\t\t\topts: DownloadOptions{\n+\t\t\t\tRunID: \"2345\",\n+\t\t\t},\n+\t\t\tplatform: &fakePlatform{\n+\t\t\t\trunArtifacts: map[string][]testArtifact{\n+\t\t\t\t\t\"2345\": {\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-1\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-1-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-1\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact2.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-2-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n \t\t\t\t\t},\n-\t\t\t\t\t{\n-\t\t\t\t\t\tName:        \"artifact-2\",\n-\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact2.zip\",\n-\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t},\n+\t\t\t},\n+\t\t\texpectedFiles: []string{\n+\t\t\t\tfilepath.Join(\"artifact-1\", \"artifact-1-file\"),\n+\t\t\t},\n+\t\t},\n+\t\t{\n+\t\t\tname: \"prompt to select artifact\",\n+\t\t\topts: DownloadOptions{\n+\t\t\t\tRunID:    \"\",\n+\t\t\t\tDoPrompt: true,\n+\t\t\t\tNames:    []string(nil),\n+\t\t\t},\n+\t\t\tplatform: &fakePlatform{\n+\t\t\t\trunArtifacts: map[string][]testArtifact{\n+\t\t\t\t\t\"2345\": {\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-1\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-1-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"expired-artifact\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/expired.zip\",\n+\t\t\t\t\t\t\t\tExpired:     true,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"expired\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n \t\t\t\t\t},\n-\t\t\t\t\t{\n-\t\t\t\t\t\tName:        \"artifact-2\",\n-\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact2.also.zip\",\n-\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\"6789\": {\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"artifact-2\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact2.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"artifact-2-file\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n \t\t\t\t\t},\n-\t\t\t\t}, nil)\n-\t\t\t\tp.On(\"Download\", \"http://download.com/artifact2.zip\", \".\").Return(nil)\n+\t\t\t\t},\n \t\t\t},\n \t\t\tpromptStubs: func(pm *prompter.MockPrompter) {\n \t\t\t\tpm.RegisterMultiSelect(\"Select artifacts to download:\", nil, []string{\"artifact-1\", \"artifact-2\"},\n \t\t\t\t\tfunc(_ string, _, opts []string) ([]int, error) {\n-\t\t\t\t\t\treturn []int{1}, nil\n+\t\t\t\t\t\tfor i, o := range opts {\n+\t\t\t\t\t\t\tif o == \"artifact-2\" {\n+\t\t\t\t\t\t\t\treturn []int{i}, nil\n+\t\t\t\t\t\t\t}\n+\t\t\t\t\t\t}\n+\t\t\t\t\t\treturn nil, fmt.Errorf(\"no artifact-2 found in %v\", opts)\n \t\t\t\t\t})\n \t\t\t},\n+\t\t\texpectedFiles: []string{\n+\t\t\t\tfilepath.Join(\"artifact-2-file\"),\n+\t\t\t},\n+\t\t},\n+\t\t{\n+\t\t\tname: \"handling artifact name with path traversal exploit\",\n+\t\t\topts: DownloadOptions{\n+\t\t\t\tRunID: \"2345\",\n+\t\t\t},\n+\t\t\tplatform: &fakePlatform{\n+\t\t\t\trunArtifacts: map[string][]testArtifact{\n+\t\t\t\t\t\"2345\": {\n+\t\t\t\t\t\t{\n+\t\t\t\t\t\t\tartifact: shared.Artifact{\n+\t\t\t\t\t\t\t\tName:        \"..\",\n+\t\t\t\t\t\t\t\tDownloadURL: \"http://download.com/artifact1.zip\",\n+\t\t\t\t\t\t\t\tExpired:     false,\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t\tfiles: []string{\n+\t\t\t\t\t\t\t\t\"etc/passwd\",\n+\t\t\t\t\t\t\t},\n+\t\t\t\t\t\t},\n+\t\t\t\t\t},\n+\t\t\t\t},\n+\t\t\t},\n+\t\t\texpectedFiles: []string{},\n+\t\t\twantErr:       \"error downloading ..: would result in path traversal\",\n \t\t},\n \t}\n \tfor _, tt := range tests {\n \t\tt.Run(tt.name, func(t *testing.T) {\n \t\t\topts := &tt.opts\n+\t\t\tif opts.DestinationDir == \"\" {\n+\t\t\t\topts.DestinationDir = t.TempDir()\n+\t\t\t} else {\n+\t\t\t\topts.DestinationDir = filepath.Join(t.TempDir(), opts.DestinationDir)\n+\t\t\t}\n+\n \t\t\tios, _, stdout, stderr := iostreams.Test()\n \t\t\topts.IO = ios\n-\t\t\topts.Platform = newMockPlatform(t, tt.mockAPI)\n+\t\t\topts.Platform = tt.platform\n \n \t\t\tpm := prompter.NewMockPrompter(t)\n \t\t\topts.Prompter = pm\n@@ -310,34 +690,31 @@ func Test_runDownload(t *testing.T) {\n \t\t\t\trequire.NoError(t, err)\n \t\t\t}\n \n+\t\t\t// Check that the exact number of files exist\n+\t\t\trequire.Equal(t, len(tt.expectedFiles), countFilesInDirRecursively(t, opts.DestinationDir))\n+\n+\t\t\t// Then check that the exact files are correct\n+\t\t\tfor _, name := range tt.expectedFiles {\n+\t\t\t\trequire.FileExists(t, filepath.Join(opts.DestinationDir, name))\n+\t\t\t}\n+\n \t\t\tassert.Equal(t, \"\", stdout.String())\n \t\t\tassert.Equal(t, \"\", stderr.String())\n \t\t})\n \t}\n }\n \n-type mockPlatform struct {\n-\tmock.Mock\n-}\n+func countFilesInDirRecursively(t *testing.T, dir string) int {\n+\tt.Helper()\n \n-func newMockPlatform(t *testing.T, config func(*mockPlatform)) *mockPlatform {\n-\tm := &mockPlatform{}\n-\tm.Test(t)\n-\tt.Cleanup(func() {\n-\t\tm.AssertExpectations(t)\n-\t})\n-\tif config != nil {\n-\t\tconfig(m)\n-\t}\n-\treturn m\n-}\n-\n-func (p *mockPlatform) List(runID string) ([]shared.Artifact, error) {\n-\targs := p.Called(runID)\n-\treturn args.Get(0).([]shared.Artifact), args.Error(1)\n-}\n+\tcount := 0\n+\trequire.NoError(t, filepath.Walk(dir, func(_ string, info os.FileInfo, err error) error {\n+\t\trequire.NoError(t, err)\n+\t\tif !info.IsDir() {\n+\t\t\tcount++\n+\t\t}\n+\t\treturn nil\n+\t}))\n \n-func (p *mockPlatform) Download(url string, dir string) error {\n-\targs := p.Called(url, dir)\n-\treturn args.Error(0)\n+\treturn count\n }"
+        },
+        {
+          "filename": "pkg/cmd/run/download/zip.go",
+          "status": "modified",
+          "additions": 18,
+          "deletions": 6,
+          "changes": 24,
+          "patch": "@@ -71,13 +71,25 @@ func getPerm(m os.FileMode) os.FileMode {\n }\n \n func filepathDescendsFrom(p, dir string) bool {\n+\t// Regardless of the logic below, `p` is never allowed to be current directory `.` or parent directory `..`\n+\t// however we check explicitly here before filepath.Rel() which doesn't cover all cases.\n \tp = filepath.Clean(p)\n-\tdir = filepath.Clean(dir)\n-\tif dir == \".\" && !filepath.IsAbs(p) {\n-\t\treturn !strings.HasPrefix(p, \"..\"+string(filepath.Separator))\n+\n+\tif p == \".\" || p == \"..\" {\n+\t\treturn false\n \t}\n-\tif !strings.HasSuffix(dir, string(filepath.Separator)) {\n-\t\tdir += string(filepath.Separator)\n+\n+\t// filepathDescendsFrom() takes advantage of filepath.Rel() to determine if `p` is descended from `dir`:\n+\t//\n+\t// 1. filepath.Rel() calculates a path to traversal from fictious `dir` to `p`.\n+\t// 2. filepath.Rel() errors in a handful of cases where absolute and relative paths are compared as well as certain traversal edge cases\n+\t//    For more information, https://github.com/golang/go/blob/00709919d09904b17cfe3bfeb35521cbd3fb04f8/src/path/filepath/path_test.go#L1510-L1515\n+\t// 3. If the path to traverse `dir` to `p` requires `..`, then we know it is not descend from / contained in `dir`\n+\t//\n+\t// As-is, this function requires the caller to ensure `p` and `dir` are either 1) both relative or 2) both absolute.\n+\trelativePath, err := filepath.Rel(dir, p)\n+\tif err != nil {\n+\t\treturn false\n \t}\n-\treturn strings.HasPrefix(p, dir)\n+\treturn !strings.HasPrefix(relativePath, \"..\")\n }"
+        },
+        {
+          "filename": "pkg/cmd/run/download/zip_test.go",
+          "status": "modified",
+          "additions": 80,
+          "deletions": 0,
+          "changes": 80,
+          "patch": "@@ -130,6 +130,86 @@ func Test_filepathDescendsFrom(t *testing.T) {\n \t\t\t},\n \t\t\twant: false,\n \t\t},\n+\t\t{\n+\t\t\tname: \"deny parent directory filename (`..`) escaping absolute directory\",\n+\t\t\targs: args{\n+\t\t\t\tp:   filepath.FromSlash(\"..\"),\n+\t\t\t\tdir: filepath.FromSlash(\"/var/logs/\"),\n+\t\t\t},\n+\t\t\twant: false,\n+\t\t},\n+\t\t{\n+\t\t\tname: \"deny parent directory filename (`..`) escaping current directory\",\n+\t\t\targs: args{\n+\t\t\t\tp:   filepath.FromSlash(\"..\"),\n+\t\t\t\tdir: filepath.FromSlash(\".\"),\n+\t\t\t},\n+\t\t\twant: false,\n+\t\t},\n+\t\t{\n+\t\t\tname: \"deny parent directory filename (`..`) escaping parent directory\",\n+\t\t\targs: args{\n+\t\t\t\tp:   filepath.FromSlash(\"..\"),\n+\t\t\t\tdir: filepath.FromSlash(\"..\"),\n+\t\t\t},\n+\t\t\twant: false,\n+\t\t},\n+\t\t{\n+\t\t\tname: \"deny parent directory filename (`..`) escaping relative directory\",\n+\t\t\targs: args{\n+\t\t\t\tp:   filepath.FromSlash(\"..\"),\n+\t\t\t\tdir: filepath.FromSlash(\"relative-dir\"),\n+\t\t\t},\n+\t\t\twant: false,\n+\t\t},\n+\t\t{\n+\t\t\tname: \"deny current directory filename (`.`) in absolute directory\",\n+\t\t\targs: args{\n+\t\t\t\tp:   filepath.FromSlash(\".\"),\n+\t\t\t\tdir: filepath.FromSlash(\"/var/logs/\"),\n+\t\t\t},\n+\t\t\twant: false,\n+\t\t},\n+\t\t{\n+\t\t\tname: \"deny current directory filename (`.`) in current directory\",\n+\t\t\targs: args{\n+\t\t\t\tp:   filepath.FromSlash(\".\"),\n+\t\t\t\tdir: filepath.FromSlash(\".\"),\n+\t\t\t},\n+\t\t\twant: false,\n+\t\t},\n+\t\t{\n+\t\t\tname: \"deny current directory filename (`.`) in parent directory\",\n+\t\t\targs: args{\n+\t\t\t\tp:   filepath.FromSlash(\".\"),\n+\t\t\t\tdir: filepath.FromSlash(\"..\"),\n+\t\t\t},\n+\t\t\twant: false,\n+\t\t},\n+\t\t{\n+\t\t\tname: \"deny current directory filename (`.`) in relative directory\",\n+\t\t\targs: args{\n+\t\t\t\tp:   filepath.FromSlash(\".\"),\n+\t\t\t\tdir: filepath.FromSlash(\"relative-dir\"),\n+\t\t\t},\n+\t\t\twant: false,\n+\t\t},\n+\t\t{\n+\t\t\tname: \"relative path, absolute dir\",\n+\t\t\targs: args{\n+\t\t\t\tp:   filepath.FromSlash(\"whatever\"),\n+\t\t\t\tdir: filepath.FromSlash(\"/a/b/c\"),\n+\t\t\t},\n+\t\t\twant: false,\n+\t\t},\n+\t\t{\n+\t\t\tname: \"absolute path, relative dir\",\n+\t\t\targs: args{\n+\t\t\t\tp:   filepath.FromSlash(\"/a/b/c\"),\n+\t\t\t\tdir: filepath.FromSlash(\"whatever\"),\n+\t\t\t},\n+\t\t\twant: false,\n+\t\t},\n \t}\n \tfor _, tt := range tests {\n \t\tt.Run(tt.name, func(t *testing.T) {"
+        }
+      ]
+    },
+    "refs": [
+      {
+        "url": "https://github.com/cli/cli/commit/1136764c369aaf0cae4ec2ee09dc35d871076932",
+        "source": "security-advisories@github.com"
+      },
+      {
+        "url": "https://github.com/cli/cli/security/advisories/GHSA-2m9h-r57g-45pj",
+        "source": "security-advisories@github.com"
+      }
+    ],
+    "CVSS": {}
+  },
+  {
+    "CVEID": "CVE-2024-54674",
+    "CWEIDs": [
+      "79"
+    ],
+    "Repo": "https://github.com/MISP/MISP",
+    "Language": "PHP",
+    "VulnerableCommit": "e02c2b864a85d14d64adf9f878f9c7b2bdd15173",
+    "PatchInfo": {
+      "URL": "https://github.com/MISP/MISP/commit/d0330989e235a8a9f43c90817896de87a589ef7d",
+      "Time": "2024-11-27T07:54:22Z",
+      "Message": "fix: [security] Fixed stored xss when exporting custom clusters into the misp-galaxy format\n\n- As reported by fukusuket (Fukusuke Takahashi)",
+      "Diff": [
+        {
+          "filename": "app/View/GalaxyClusters/cluster_export_misp_galaxy.ctp",
+          "status": "modified",
+          "additions": 1,
+          "deletions": 1,
+          "changes": 2,
+          "patch": "@@ -5,7 +5,7 @@\n         <p>This JSON can be added added to the <code class=\"quickSelect\">misp-galaxy/clusters/<?= h($cluster['GalaxyCluster']['type']) ?>.json</code>.</p>\n         <p>Don't forget to bump the <code>version</code> specified at the end of the <code><?= h($cluster['GalaxyCluster']['type']) ?>.json</code> file.</p>\n \n-        <pre class=\"quickSelect\"><?= JsonTool::encode($convertedCluster, true) ?></pre>\n+        <pre class=\"quickSelect\"><?= JsonTool::encode(h($convertedCluster), true) ?></pre>\n     </div>\n </div>\n <?= $this->element('/genericElements/SideMenu/side_menu', ['menuList' => 'galaxies', 'menuItem' => 'view_cluster']);\n\\ No newline at end of file"
+        }
+      ]
+    },
+    "refs": [
+      {
+        "url": "https://github.com/MISP/MISP/commit/d0330989e235a8a9f43c90817896de87a589ef7d",
+        "source": "cve@mitre.org"
+      }
+    ],
+    "CVSS": {
+      "version": "3.1",
+      "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+      "baseScore": 6.1,
+      "baseSeverity": "MEDIUM",
+      "attackVector": "NETWORK",
+      "attackComplexity": "LOW",
+      "privilegesRequired": "NONE",
+      "userInteraction": "REQUIRED",
+      "scope": "CHANGED",
+      "confidentialityImpact": "LOW",
+      "integrityImpact": "LOW",
+      "availabilityImpact": "NONE"
+    }
+  },
+  {
+    "CVEID": "CVE-2024-54675",
+    "CWEIDs": [
+      "79"
+    ],
+    "Repo": "https://github.com/MISP/MISP",
+    "Language": "PHP",
+    "VulnerableCommit": "246a3ee02a42315ed465ff242fd1bc014e8e1840",
+    "PatchInfo": {
+      "URL": "https://github.com/MISP/MISP/commit/e02c2b864a85d14d64adf9f878f9c7b2bdd15173",
+      "Time": "2024-11-27T07:54:02Z",
+      "Message": "fix: [security] Fixed stored XSS in editor interface for ad-hoc workflows\n\n- As reported by fukusuket (Fukusuke Takahashi)",
+      "Diff": [
+        {
+          "filename": "app/webroot/js/workflows-editor/workflows-editor.js",
+          "status": "modified",
+          "additions": 23,
+          "deletions": 23,
+          "changes": 46,
+          "patch": "@@ -1,15 +1,15 @@\n var dotBlock_default = doT.template(' \\\n-<div class=\"canvas-workflow-block {{? it.module_data.is_misp_module }} is-misp-module {{?}}\" data-nodeuid=\"{{=it.node_uid}}\"> \\\n+<div class=\"canvas-workflow-block {{? it.module_data.is_misp_module }} is-misp-module {{?}}\" data-nodeuid=\"{{!it.node_uid}}\"> \\\n     <div style=\"width: 100%;\"> \\\n         <div class=\"default-main-container\"> \\\n             {{? it.module_data.icon }} \\\n-                <i class=\"fa-fw fa-{{=it.module_data.icon}} {{=it.module_data.icon_class}}\"></i> \\\n+                <i class=\"fa-fw fa-{{!it.module_data.icon}} {{!it.module_data.icon_class}}\"></i> \\\n             {{?}} \\\n             {{? it.module_data.icon_path }} \\\n-                <span style=\"display: flex; height: 1em;\"><img src=\"/img/{{=it.module_data.icon_path}}\" alt=\"Icon of {{=it.module_data.name}}\" width=\"18\" height=\"18\" style=\"margin: auto 0; filter: grayscale(1);\"></span> \\\n+                <span style=\"display: flex; height: 1em;\"><img src=\"/img/{{!it.module_data.icon_path}}\" alt=\"Icon of {{!it.module_data.name}}\" width=\"18\" height=\"18\" style=\"margin: auto 0; filter: grayscale(1);\"></span> \\\n             {{?}} \\\n             <strong style=\"margin-left: 0.25em;\"> \\\n-                {{=it.module_data.name}} \\\n+                {{!it.module_data.name}} \\\n             </strong> \\\n             {{? it.module_data.is_misp_module }} \\\n                 <sup class=\"is-misp-module\"></sup> \\\n@@ -29,23 +29,23 @@ var dotBlock_default = doT.template(' \\\n                 </span> \\\n             </span> \\\n         </div> \\\n-        <div class=\"muted\" class=\"description\" style=\"margin-bottom: 0.5em;\">{{=it.module_data.description}}</div> \\\n+        <div class=\"muted\" class=\"description\" style=\"margin-bottom: 0.5em;\">{{!it.module_data.description}}</div> \\\n         {{=it._node_param_html}} \\\n     </div> \\\n </div>')\n \n var dotBlock_trigger = doT.template(' \\\n-<div class=\"canvas-workflow-block\" data-nodeuid=\"{{=it.node_uid}}\"> \\\n+<div class=\"canvas-workflow-block\" data-nodeuid=\"{{!it.node_uid}}\"> \\\n     <div style=\"width: 100%;\"> \\\n         <div class=\"default-main-container\" style=\"border:none;\"> \\\n             {{? it.module_data.icon }} \\\n-                <i class=\"fa-fw fa-{{=it.module_data.icon}} {{=it.module_data.icon_class}}\"></i> \\\n+                <i class=\"fa-fw fa-{{!it.module_data.icon}} {{!it.module_data.icon_class}}\"></i> \\\n             {{?}} \\\n             {{? it.module_data.icon_path }} \\\n-                <span style=\"display: flex; height: 1em;\"><img src=\"/img/{{=it.module_data.icon_path}}\" alt=\"Icon of {{=it.module_data.name}}\" width=\"18\" height=\"18\" style=\"margin: auto 0;\"></span> \\\n+                <span style=\"display: flex; height: 1em;\"><img src=\"/img/{{!it.module_data.icon_path}}\" alt=\"Icon of {{!it.module_data.name}}\" width=\"18\" height=\"18\" style=\"margin: auto 0;\"></span> \\\n             {{?}} \\\n             <strong style=\"margin-left: 0.25em;\"> \\\n-                {{=it.module_data.name}} \\\n+                {{!it.module_data.name}} \\\n             </strong> \\\n             <span style=\"margin-left: auto; display: flex; align-items: center; gap: 3px;\"> \\\n                 {{? it.module_data.blocking }} \\\n@@ -69,23 +69,23 @@ var dotBlock_trigger = doT.template(' \\\n                 {{?}} \\\n             </span> \\\n         </div> \\\n-        <div class=\"muted\" class=\"description\" style=\"margin-bottom: 0.5em;\">{{=it.module_data.description}}</div> \\\n+        <div class=\"muted\" class=\"description\" style=\"margin-bottom: 0.5em;\">{{!it.module_data.description}}</div> \\\n         {{=it._node_param_html}} \\\n     </div> \\\n </div>')\n \n var dotBlock_if = doT.template(' \\\n-<div class=\"canvas-workflow-block\" data-nodeuid=\"{{=it.node_uid}}\"> \\\n+<div class=\"canvas-workflow-block\" data-nodeuid=\"{{!it.node_uid}}\"> \\\n     <div style=\"width: 100%;\"> \\\n         <div class=\"default-main-container\"> \\\n             {{? it.module_data.icon }} \\\n-                <i class=\"fa-fw fa-{{=it.module_data.icon}} {{=it.module_data.icon_class}}\"></i> \\\n+                <i class=\"fa-fw fa-{{!it.module_data.icon}} {{!it.module_data.icon_class}}\"></i> \\\n             {{?}} \\\n             {{? it.module_data.icon_path }} \\\n-                <span style=\"display: flex; height: 1em;\"><img src=\"/img/{{=it.module_data.icon_path}}\" alt=\"Icon of {{=it.module_data.name}}\" width=\"18\" height=\"18\" style=\"margin: auto 0;\"></span> \\\n+                <span style=\"display: flex; height: 1em;\"><img src=\"/img/{{!it.module_data.icon_path}}\" alt=\"Icon of {{!it.module_data.name}}\" width=\"18\" height=\"18\" style=\"margin: auto 0;\"></span> \\\n             {{?}} \\\n             <strong style=\"margin-left: 0.25em;\"> \\\n-                {{=it.module_data.name}} \\\n+                {{!it.module_data.name}} \\\n             </strong> \\\n             <span style=\"margin-left: auto;\"> \\\n                 <span class=\"block-notification-container\"> \\\n@@ -101,17 +101,17 @@ var dotBlock_if = doT.template(' \\\n </div>')\n \n var dotBlock_concurrent = doT.template(' \\\n-<div class=\"canvas-workflow-block\" data-nodeuid=\"{{=it.node_uid}}\"> \\\n+<div class=\"canvas-workflow-block\" data-nodeuid=\"{{!it.node_uid}}\"> \\\n     <div style=\"width: 100%;\"> \\\n         <div class=\"default-main-container\"> \\\n             {{? it.module_data.icon }} \\\n-                <i class=\"fa-fw fa-{{=it.module_data.icon}} {{=it.module_data.icon_class}}\"></i> \\\n+                <i class=\"fa-fw fa-{{!it.module_data.icon}} {{!it.module_data.icon_class}}\"></i> \\\n             {{?}} \\\n             {{? it.module_data.icon_path }} \\\n-                <span style=\"display: flex; height: 1em;\"><img src=\"/img/{{=it.module_data.icon_path}}\" alt=\"Icon of {{=it.module_data.name}}\" width=\"18\" height=\"18\" style=\"margin: auto 0;\"></span> \\\n+                <span style=\"display: flex; height: 1em;\"><img src=\"/img/{{!it.module_data.icon_path}}\" alt=\"Icon of {{!it.module_data.name}}\" width=\"18\" height=\"18\" style=\"margin: auto 0;\"></span> \\\n             {{?}} \\\n             <strong style=\"margin-left: 0.25em;\"> \\\n-                {{=it.module_data.name}} \\\n+                {{!it.module_data.name}} \\\n             </strong> \\\n             <span style=\"margin-left: auto;\"> \\\n                 <span class=\"block-notification-container\"> \\\n@@ -123,21 +123,21 @@ var dotBlock_concurrent = doT.template(' \\\n             </span> \\\n         </div> \\\n         {{=it._node_param_html}} \\\n-        <div class=\"muted\" class=\"description\" style=\"margin-bottom: 0.5em;\">{{=it.module_data.description}}</div> \\\n+        <div class=\"muted\" class=\"description\" style=\"margin-bottom: 0.5em;\">{{!it.module_data.description}}</div> \\\n     </div> \\\n </div>')\n \n var dotBlock_error = doT.template(' \\\n-<div class=\"canvas-workflow-block\" data-nodeuid=\"{{=it.node_uid}}\"> \\\n+<div class=\"canvas-workflow-block\" data-nodeuid=\"{{!it.node_uid}}\"> \\\n     <div style=\"width: 100%;\"> \\\n-        <div class=\"alert alert-danger\">{{=it.error}}</div> \\\n+        <div class=\"alert alert-danger\">{{!it.error}}</div> \\\n         <div>Data:</div> \\\n-        <textarea rows=6 style=\"width: 95%;\">{{=it.data}}</textarea> \\\n+        <textarea rows=6 style=\"width: 95%;\">{{!it.data}}</textarea> \\\n     </div> \\\n </div>')\n \n var dotBlock_connectionLabel = doT.template(' \\\n-<span class=\"label label-{{=it.variant}}\" id=\"{{=it.id}}\">{{=it.name}}</span>')\n+<span class=\"label label-{{!it.variant}}\" id=\"{{!it.id}}\">{{!it.name}}</span>')\n \n var classBySeverity = {\n     'info': 'info',"
+        }
+      ]
+    },
+    "refs": [
+      {
+        "url": "https://github.com/MISP/MISP/commit/e02c2b864a85d14d64adf9f878f9c7b2bdd15173",
+        "source": "cve@mitre.org"
+      }
+    ],
+    "CVSS": {
+      "version": "3.1",
+      "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+      "baseScore": 6.1,
+      "baseSeverity": "MEDIUM",
+      "attackVector": "NETWORK",
+      "attackComplexity": "LOW",
+      "privilegesRequired": "NONE",
+      "userInteraction": "REQUIRED",
+      "scope": "CHANGED",
+      "confidentialityImpact": "LOW",
+      "integrityImpact": "LOW",
+      "availabilityImpact": "NONE"
+    }
+  }
+]

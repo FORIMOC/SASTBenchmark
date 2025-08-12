@@ -56,6 +56,33 @@ def with_retries(max_retries=5, wait_seconds=5):
 
 
 @with_retries(max_retries=999, wait_seconds=5)
+def get_commit_diff(owner, repo, sha):
+    """
+    获取指定 commit 的结构化 diff 信息（JSON 格式）
+    每个文件包含 filename、status、additions、deletions、changes、patch 等
+    """
+    url = f"https://api.github.com/repos/{owner}/{repo}/commits/{sha}"
+    headers = HEADERS.copy()
+    headers["Accept"] = "application/vnd.github.v3+json"  # JSON 格式
+    r = requests.get(url, headers=headers, timeout=15)
+    r.raise_for_status()
+    data = r.json()
+
+    files_info = []
+    for f in data.get("files", []):
+        files_info.append({
+            "filename": f["filename"],
+            "status": f["status"],         # modified / added / removed / renamed
+            "additions": f["additions"],   # 新增行数
+            "deletions": f["deletions"],   # 删除行数
+            "changes": f["changes"],       # 总改动数
+            "patch": f.get("patch", "")    # diff 片段（带 @@ 行号信息）
+        })
+
+    return files_info
+
+
+@with_retries(max_retries=999, wait_seconds=5)
 def get_commit_message(owner, repo, sha):
     url = f"https://api.github.com/repos/{owner}/{repo}/commits/{sha}"
     try:

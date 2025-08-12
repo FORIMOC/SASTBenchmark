@@ -1,0 +1,13 @@
+[path]
+root = "/Users/forimoc/Desktop/fdu/secsys/SASTRuleDB"
+logs = "/Users/forimoc/Desktop/fdu/secsys/SASTRuleDB/logs"
+sast = "/Users/forimoc/Desktop/fdu/secsys/SASTRuleDB/sast_tools"
+output = "/Users/forimoc/Desktop/fdu/secsys/SASTRuleDB/output_data"
+
+[llm_settings]
+api_key = ""
+base_url = ""
+system_prompt = "You are a helpful assistant who solves code-related problems."
+#model = "deepseek-chat"
+model = "deepseek-v3-0324"
+max_tokens = 4096 # 单次请求的最大 token 数量

@@ -4,14 +4,12 @@ import requests
 import json
 from datetime import datetime, timedelta
 
-from src.cclocator.github_api import *
+from src.bench_gen.github_api import *
 from src.utils.vul_class import OWASP_TOP10_2021_CWE
 
 TOP_CWE_SET = {cwe for group in OWASP_TOP10_2021_CWE for cwe in group}
 HASH_PATTERN = re.compile(r"/([0-9a-fA-F]{40})(/|$)")
 ALLOWED_LANGUAGES = {"Python", "Java", "JavaScript", "Go", "PHP"}
-
-PATCH_KEYWORDS = ["fix", "remove", "patch", "repair", "resolve", "vuln"]
 
 
 class CVECollector:
@@ -21,15 +19,12 @@ class CVECollector:
     def is_top_cwe(self, cwe_ids):
         return any(cwe in TOP_CWE_SET for cwe in cwe_ids)
 
-    def contains_patch_keyword(self, message):
-        return any(kw in message.lower() for kw in PATCH_KEYWORDS)
-
     def parse_github_info(self, url):
-        match = re.match(r"https://github\.com/([^/]+)/([^/]+)/(commit|blob)/([0-9a-fA-F]{40})", url)
+        match = re.match(r"https://github\.com/([^/]+)/([^/]+)/commit/([0-9a-fA-F]{40})", url)
         if not match:
             return None
-        owner, repo, kind, sha = match.groups()
-        return owner, repo, kind, sha
+        owner, repo, sha = match.groups()
+        return owner, repo, sha
 
     def split_date_ranges(self, start_date_str, end_date_str, max_days=120):
         """
@@ -86,7 +81,7 @@ class CVECollector:
                             cwe_ids.add(desc["value"].replace("CWE-", ""))
                 cwe_ids = list(cwe_ids)
 
-                # 不是 Top 15 CWE 列表中的漏洞，跳过
+                # 不是 Top CWE 列表中的漏洞，跳过
                 if not self.is_top_cwe(cwe_ids):
                     continue
 
@@ -106,16 +101,18 @@ class CVECollector:
 
                 for ref in refs:
                     url = ref.get("url", "")
-                    if "github.com" in url and ("commit" in url or "blob" in url) and HASH_PATTERN.search(url):
+                    # 必须是 GitHub 的 commit 链接
+                    if "github.com" in url and "commit" in url and HASH_PATTERN.search(url):
                         info = self.parse_github_info(url)
                         if info:
-                            owner, repo, kind, sha = info
+                            owner, repo, sha = info
 
+                            # 检查语言
                             if not language_checked:
                                 language = get_repo_language(owner, repo)
                                 language_checked = True
                                 if language not in ALLOWED_LANGUAGES:
-                                    print(f"[-] 跳过 {owner}/{repo}，语言 {language} 不符合要求")
+                                    print(f"[-] 跳过 {cve_id} - {owner}/{repo}，语言 {language} 不符合要求")
                                     skip_repo = True
                                     break
 
@@ -126,32 +123,20 @@ class CVECollector:
                                     "time": commit_time,
                                     "sha": sha,
                                     "repo": f"{owner}/{repo}",
-                                    "kind": kind
                                 })
-                            time.sleep(1)
+                            # time.sleep(1)
 
                 if skip_repo or not commit_infos:
                     continue
 
-                # 优先选择 blob 类型的记录
-                blob_candidates = [info for info in commit_infos if info["kind"] == "blob"]
-                if blob_candidates:
-                    blob_candidates.sort(key=lambda x: datetime.fromisoformat(x["time"].replace("Z", "+00:00")))
-                    best = blob_candidates[0]
-                    vulnerable_commit = best["sha"]
-                else:
-                    # 没有 blob，则选择 commit 类型的记录，并获取其 parent commit
-                    commit_candidates = [info for info in commit_infos if info["kind"] == "commit"]
-                    if not commit_candidates:
-                        continue
-                    commit_candidates.sort(key=lambda x: datetime.fromisoformat(x["time"].replace("Z", "+00:00")))
-                    best = commit_candidates[0]
-                    owner, repo = best["repo"].split("/")
-                    commit_message = get_commit_message(owner, repo, best["sha"])
-                    if self.contains_patch_keyword(commit_message):
-                        vulnerable_commit = get_parent_commit(owner, repo, best["sha"]) or best["sha"]
-                    else:
-                        vulnerable_commit = best["sha"]
+                # 选择最老的一个提交
+                commit_infos.sort(key=lambda x: datetime.fromisoformat(x["time"].replace("Z", "+00:00")))
+                best = commit_infos[0]
+                owner, repo = best["repo"].split("/")
+                # 获取提交信息以及 diff 信息
+                commit_message = get_commit_message(owner, repo, best["sha"])
+                diff_info = get_commit_diff(owner, repo, best["sha"])
+                vulnerable_commit = get_parent_commit(owner, repo, best["sha"])
 
                 result = {
                     "CVEID": cve_id,
@@ -162,7 +147,8 @@ class CVECollector:
                     "PatchInfo": {
                         "URL": best["url"],
                         "Time": best["time"],
-                        "Kind": best["kind"],
+                        "Message": commit_message,
+                        "Diff": diff_info
                     },
                     "refs": refs,
                     "CVSS": cvss_info
